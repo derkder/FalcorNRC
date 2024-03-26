@@ -9,7 +9,7 @@ set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${CMAKE_SOURCE_DIR}/cmake)
 
 project(Falcor
     DESCRIPTION "Falcor Realtime Rendering Framework"
-    LANGUAGES CXX C
+    LANGUAGES CXX C CUDA
 )
 
 # -----------------------------------------------------------------------------

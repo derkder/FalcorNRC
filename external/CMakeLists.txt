@@ -23,12 +23,12 @@ add_library(args INTERFACE)
 target_include_directories(args INTERFACE args)
 
 # fmt
-message(STATUS "Configure fmt")
-add_subdirectory(fmt)
-set_target_properties(fmt PROPERTIES
-    POSITION_INDEPENDENT_CODE ON
-    FOLDER "Libraries"
-)
+# message(STATUS "Configure fmt")
+# add_subdirectory(fmt)
+# set_target_properties(fmt PROPERTIES
+#     POSITION_INDEPENDENT_CODE ON
+#     FOLDER "Libraries"
+# )
 
 # glfw
 message(STATUS "Configure glfw")
@@ -48,6 +48,12 @@ add_subdirectory(pybind11)
 # vulkan-headers
 add_subdirectory(vulkan-headers)
 
+# tiny-cuda-nn
+set(TCNN_BUILD_BENCHMARK OFF)
+set(TCNN_BUILD_EXAMPLES OFF)
+set(TCNN_ALLOW_CUBLAS_CUSOLVER OFF)
+add_subdirectory(tiny-cuda-nn)
+
 
 # -----------------------------------------------------------------------------
 # Dependencies in local files
@@ -65,9 +71,11 @@ set_target_properties(mikktspace PROPERTIES
 add_library(imgui_addons INTERFACE)
 target_include_directories(imgui_addons INTERFACE imgui_addons)
 
+# MODIFIED BY ME: add tiny-cuda-nn/dependencies
 # external_includes
 add_library(external_includes INTERFACE)
-target_include_directories(external_includes INTERFACE include)
+target_include_directories(external_includes INTERFACE include tiny-cuda-nn/dependencies)
+
 
 # -----------------------------------------------------------------------------
 # Dependencies in packman
