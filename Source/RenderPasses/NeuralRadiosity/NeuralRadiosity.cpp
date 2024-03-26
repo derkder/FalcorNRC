@@ -182,6 +182,7 @@ void NeuralRadiosity::execute(RenderContext* pRenderContext, const RenderData& r
     mpScene->raytrace(pRenderContext, mTracer.pProgram.get(), mTracer.pVars, uint3(targetDim, 1));
 
     neuralRadiosityForward(pRenderContext);
+    neuralRadiosityTrain(pRenderContext);
 
     mpResolvePass->execute(pRenderContext, Falcor::uint3(targetDim, 1));
 
@@ -192,6 +193,13 @@ void NeuralRadiosity::neuralRadiosityForward(RenderContext* pRenderContext)
 {
     pRenderContext->copyResource(mpRadiosityQueryCudaBuffer.buffer.get(), mpRadiosityQueryBuffer.get());
     mNetwork->forward((RadiosityQuery*)mpRadiosityQueryCudaBuffer.devicePtr, mOutputSurf);
+}
+
+void NeuralRadiosity::neuralRadiosityTrain(RenderContext* pRenderContext)
+{
+    float loss;
+    pRenderContext->copyResource(mpRadiosityQueryCudaBuffer.buffer.get(), mpRadiosityQueryBuffer.get());
+    mNetwork->train((RadiosityQuery*)mpRadiosityQueryCudaBuffer.devicePtr, mOutputSurf, loss);
 }
 
 void NeuralRadiosity::renderUI(Gui::Widgets& widget)
