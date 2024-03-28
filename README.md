@@ -1,3 +1,8 @@
+# NRC
+Tring to implement NRC using Falrcor + tiny-cuda-nn
+___
+
+
 ![](docs/images/teaser.png)
 
 # Falcor
