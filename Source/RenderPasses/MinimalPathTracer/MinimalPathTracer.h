@@ -27,8 +27,14 @@
  **************************************************************************/
 #pragma once
 #include "Falcor.h"
+#include "Network.h"
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
+#include "RenderGraph/RenderPassHelpers.h"
+#include "Utils/CudaUtils.h"
+
+
+#include "Params.slang"
 
 using namespace Falcor;
 
@@ -95,4 +101,12 @@ private:
         ref<RtBindingTable> pBindingTable;
         ref<RtProgramVars> pVars;
     } mTracer;
+
+    // NRC
+    NRCNetwork* mNRCNetwork;
+    ref<Buffer> myNRCQueryBuffer;
+    InteropBuffer myNRCQueryCudaBuffer;
+    ref<Texture> mOutputTex;
+    cudaSurfaceObject_t mOutputSurf;
+    NRCNetwork* mNetwork = nullptr;
 };
