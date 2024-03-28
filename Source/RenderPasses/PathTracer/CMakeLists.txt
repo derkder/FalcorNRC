@@ -1,10 +1,13 @@
 add_plugin(PathTracer)
 
 target_sources(PathTracer PRIVATE
+    Config.h
     ColorType.slang
     GeneratePaths.cs.slang
     GuideData.slang
     LoadShadingData.slang
+    Network.h
+    Network.cu
     NRDHelpers.slang
     Params.slang
     PathState.slang
@@ -17,6 +20,7 @@ target_sources(PathTracer PRIVATE
     StaticParams.slang
     TracePass.rt.slang
 )
+target_link_libraries(PathTracer PRIVATE tiny-cuda-nn)
 
 target_copy_shaders(PathTracer RenderPasses/PathTracer)
 

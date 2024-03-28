@@ -9,7 +9,7 @@
 #include <json/json.hpp>
 
 using namespace tcnn;
-using precision_t = network_precision_t;
+using precision_t = network_precision_t;//冒红光是因为这个写在条件编译里的
 
 namespace
 {
@@ -183,14 +183,14 @@ void RadiosityNetwork::forward(Falcor::RadiosityQuery* queries, cudaSurfaceObjec
 {
     uint32_t n_elements = frame_width * frame_height;
 
-    //准备或格式化输入数据
+    //将查询数据（queries）转换为神经网络的输入张量
     linear_kernel(formatInput<float, NetConfig::n_input_dims>, 0, inference_stream, n_elements, queries, mIOData->input_mat->data());
 
     mNetworkComponents->network->inference(inference_stream, *mIOData->input_mat, *mIOData->output_mat);
 
-    //将网络推断的结果映射或渲染到输出表面 output 上
+    //将网络推断的结果映射或渲染到输出表面
     linear_kernel(mapToOutSurf<float, NetConfig::n_output_dims>, 0, inference_stream, n_elements, frame_width, mIOData->output_mat->data(), output);
-}
+} 
 
 //这里pada一些权重文件会改吗，我吐了
 //这个数据到底是从trainingstream里读还是queries里读的啊

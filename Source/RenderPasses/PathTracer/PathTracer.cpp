@@ -1,30 +1,3 @@
-/***************************************************************************
- # Copyright (c) 2015-23, NVIDIA CORPORATION. All rights reserved.
- #
- # Redistribution and use in source and binary forms, with or without
- # modification, are permitted provided that the following conditions
- # are met:
- #  * Redistributions of source code must retain the above copyright
- #    notice, this list of conditions and the following disclaimer.
- #  * Redistributions in binary form must reproduce the above copyright
- #    notice, this list of conditions and the following disclaimer in the
- #    documentation and/or other materials provided with the distribution.
- #  * Neither the name of NVIDIA CORPORATION nor the names of its
- #    contributors may be used to endorse or promote products derived
- #    from this software without specific prior written permission.
- #
- # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS "AS IS" AND ANY
- # EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- # PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- # CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- # EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- # PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- # PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- **************************************************************************/
 #include "PathTracer.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
@@ -384,14 +357,14 @@ Properties PathTracer::getProperties() const
 RenderPassReflection PathTracer::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflector;
-    const uint2 sz = RenderPassHelpers::calculateIOSize(mOutputSizeSelection, mFixedOutputSize, compileData.defaultTexDims);
+    const Falcor::uint2 sz = RenderPassHelpers::calculateIOSize(mOutputSizeSelection, mFixedOutputSize, compileData.defaultTexDims);
 
     addRenderPassInputs(reflector, kInputChannels);
     addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::UnorderedAccess, sz);
     return reflector;
 }
 
-void PathTracer::setFrameDim(const uint2 frameDim)
+void PathTracer::setFrameDim(const Falcor::uint2 frameDim)
 {
     auto prevFrameDim = mParams.frameDim;
     auto prevScreenTiles = mParams.screenTiles;
@@ -440,6 +413,12 @@ void PathTracer::setScene(RenderContext* pRenderContext, const ref<Scene>& pScen
 void PathTracer::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     if (!beginFrame(pRenderContext, renderData)) return;
+
+    if(!mNetwork)
+    {
+        mNetwork = new NRCNetwork(mParams.frameDim.x, mParams.frameDim.y);
+    }
+    mNetwork->Test();
 
     // Update shader program specialization.
     updatePrograms();
@@ -1126,7 +1105,7 @@ bool PathTracer::beginFrame(RenderContext* pRenderContext, const RenderData& ren
     FALCOR_ASSERT(pOutputColor);
 
     // Set output frame dimension.
-    setFrameDim(uint2(pOutputColor->getWidth(), pOutputColor->getHeight()));
+    setFrameDim(Falcor::uint2(pOutputColor->getWidth(), pOutputColor->getHeight()));
 
     // Validate all I/O sizes match the expected size.
     // If not, we'll disable the path tracer to give the user a chance to fix the configuration before re-enabling it.
@@ -1149,7 +1128,7 @@ bool PathTracer::beginFrame(RenderContext* pRenderContext, const RenderData& ren
 
     if (mpScene == nullptr || !mEnabled)
     {
-        pRenderContext->clearUAV(pOutputColor->getUAV().get(), float4(0.f));
+        pRenderContext->clearUAV(pOutputColor->getUAV().get(), Falcor::float4(0.f));
 
         // Set refresh flag if changes that affect the output have occured.
         // This is needed to ensure other passes get notified when the path tracer is enabled/disabled.
@@ -1258,7 +1237,7 @@ void PathTracer::endFrame(RenderContext* pRenderContext, const RenderData& rende
         }
         else if (pDst)
         {
-            pRenderContext->clearUAV(pDst->getUAV().get(), uint4(0, 0, 0, 0));
+            pRenderContext->clearUAV(pDst->getUAV().get(), Falcor::uint4(0, 0, 0, 0));
         }
     };
 
@@ -1329,7 +1308,7 @@ void PathTracer::tracePass(RenderContext* pRenderContext, const RenderData& rend
     var["gPathTracer"] = mpPathTracerBlock;
 
     // Full screen dispatch.
-    mpScene->raytrace(pRenderContext, tracePass.pProgram.get(), tracePass.pVars, uint3(mParams.frameDim, 1));
+    mpScene->raytrace(pRenderContext, tracePass.pProgram.get(), tracePass.pVars, Falcor::uint3(mParams.frameDim, 1));
 }
 
 void PathTracer::resolvePass(RenderContext* pRenderContext, const RenderData& renderData)

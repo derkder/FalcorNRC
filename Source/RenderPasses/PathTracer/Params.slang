@@ -75,6 +75,20 @@ __exported import StaticParams;
 __exported import Utils.Math.BitTricks;
 #endif
 
+/** Used For NRC.
+*/
+struct RadianceQuery
+{
+    float3  pos;
+    float roughness;
+    float2 dir;
+    float2 normal;
+    float3 diffuse;
+    float _pad0;
+    float3 specular;
+    float _pad1;
+};
+
 /** Path tracer parameters shared between host/device code.
 */
 struct PathTracerParams
