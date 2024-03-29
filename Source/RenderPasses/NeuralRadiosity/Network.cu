@@ -1,4 +1,4 @@
-﻿#include "Network.h"
+#include "Network.h"
 
 #include <fstream>
 #include <iostream>
@@ -37,52 +37,6 @@ NetworkComponents* mNetworkComponents = nullptr;
 IOData* mIOData = nullptr;
 
 }
-
-//template<uint32_t stride, typename T = float>
-//__global__ void generateTrainingDataFromSamples(
-//    uint32_t n_elements,
-//    uint32_t offset,
-//    Falcor::RadiositySample* samples,
-//    Falcor::RadiosityQuery* self_queries,
-//    T* self_query_pred,
-//    T* training_data,
-//    T* training_target,
-//    uint32_t* training_sample_counter,
-//    uint32_t* self_query_counter,
-//    float* random_indices = nullptr
-//)
-//{
-//    uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-//    if (i + offset > n_elements)
-//        return;
-//    int data_index = i * stride, sample_index = i + offset;
-//    if (random_indices)
-//        sample_index = (1 - random_indices[sample_index]) * *training_sample_counter;
-//
-//    int pred_index = samples[sample_index].idx; // pred_index == -1 if a self-query is not needed.
-//
-//    if (sample_index < *training_sample_counter)
-//    {
-//        float3 factor = samples[sample_index].a, bias = samples[sample_index].b;
-//        uint32_t output_index = i * 3;
-//
-//        copyQuery(&training_data[data_index], &samples[sample_index].query);
-//
-//        float3 pred_radiance = {0, 0, 0};
-//        if (pred_index >= 0) // else the sample doesn't contain a self query.
-//            pred_radiance = {self_query_pred[pred_index * 3], self_query_pred[pred_index * 3 + 1], self_query_pred[pred_index * 3 + 2]};
-//#if REFLECTANCE_FACT
-//        float3 reflectance = samples[sample_index].query.diffuse + samples[sample_index].query.specular;
-//        if (pred_index >= 0)
-//            // restore self-query from reflectance factorization...
-//            pred_radiance = pred_radiance * (self_queries[pred_index].diffuse + self_queries[pred_index].specular);
-//        float3 radiance = safe_div(pred_radiance * factor + bias, reflectance);
-//#else
-//        float3 radiance = pred_radiance * factor + bias;
-//#endif
-//        *(float3*)&training_target[output_index] = radiance;
-//    }
-//}
 
 template <typename T, uint32_t stride>
 __global__ void formatInput(uint32_t n_elements, Falcor::RadiosityQuery* queries, T* input)
@@ -159,6 +113,7 @@ RadiosityNetwork::RadiosityNetwork(const uint32_t width, const uint32_t height)
 
     //下面注释掉了还能跑，我感觉是要注释掉的，应该换成训练好的weight但是好像也没有用这个就是了。
     //但是注释掉不注释掉渲染出的图像是不一样的，所以反正之前是用了权重数据的
+    // 按理说是没用这个，如果发现一定要走这个的话可以实时读写
     //mNetworkComponents->trainer->deserialize(loaded_weights);
 
     mIOData->input_mat = new GPUMatrix<float>(NetConfig::n_input_dims, width * height);
@@ -216,48 +171,6 @@ void RadiosityNetwork::train(Falcor::RadiosityQuery* queries, cudaSurfaceObject_
     linear_kernel(formatInput<float, NetConfig::n_input_dims>, 0, training_stream, n_elements, queries, mIOData->input_mat->data());
     mNetworkComponents->network->inference(training_stream, *mIOData->input_mat, *mIOData->output_mat);
 
-    // training
-    // randomly select 4 training batches over all samples
-    /*curandGenerateUniform(rng, mMemory->random_seq->data(), n_train_batch * batch_size);
-    for (uint32_t i = 0; i < n_train_batch; i++)
-    {
-        linear_kernel(
-            generateTrainingDataFromSamples<input_dim, float>,
-            0,
-            training_stream,
-            batch_size,
-            i * batch_size,
-            training_samples,
-            self_queries,
-            mMemory->training_self_pred->data(),
-            mMemory->training_data->data(),
-            mMemory->training_target->data(),
-            training_sample_counter,
-            self_query_counter,
-            mMemory->random_seq->data()
-        );
-        mNetworkComponents->trainer->training_step(training_stream, *mMemory->training_data, *mMemory->training_target, &loss);
-    }*/
-    //我就不理解为什么这个kernel他就要这么组织呢，然后这个网络还知道这个kernel是怎么组织的
-    //linear_kernel(
-    //    formatInput<float, NetConfig::n_input_dims>,
-    //    0,
-    //    training_stream,
-    //    //batch_size,
-    //    //0,//偏移
-    //    n_elements, // 个数
-    //    queries,
-    //    mIOData->output_mat->data(),//这个是网络得到的radiance。
-    //    mIOData->training_input_mat->data(),//这个难道是输入
-    //    mIOData->training_output_mat->data()//这个难道是radiance
-    //    //training_sample_counter,
-    //    //self_query_counter,
-    //    //mIOData->random_seq->data()
-    //);
-    //auto loss_object = reinterpret_cast<tcnn::Loss<tcnn::network_precision_t>*>(&loss);
-    //std::shared_ptr<tcnn::Loss<tcnn::network_precision_t>> loss_ptr(loss_object);
-    //mNetworkComponents->trainer->set_loss(loss_ptr);
-    //我浅浅当第三个input的target是我pt算出来的结果
     mNetworkComponents->trainer->training_step(training_stream, *mIOData->input_mat, *mIOData->output_mat);
     //下面的运行了，他只是不更新网络权重罢了。上面的最后一个输入参数改成input他就会闪退，所以我感觉是执行了的
     //std::cout << "Hello World!" << std::endl;

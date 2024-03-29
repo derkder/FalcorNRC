@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <string>
 #include <cuda_runtime.h>
 #include "Config.h"

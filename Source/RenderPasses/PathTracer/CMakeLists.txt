@@ -1,13 +1,10 @@
 add_plugin(PathTracer)
 
 target_sources(PathTracer PRIVATE
-    Config.h
     ColorType.slang
     GeneratePaths.cs.slang
     GuideData.slang
     LoadShadingData.slang
-    Network.h
-    Network.cu
     NRDHelpers.slang
     Params.slang
     PathState.slang

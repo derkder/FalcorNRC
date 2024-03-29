@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include "Falcor.h"
 #include "Network.h"
 #include "RenderGraph/RenderPass.h"

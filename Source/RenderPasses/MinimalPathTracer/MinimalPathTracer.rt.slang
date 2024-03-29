@@ -1,62 +1,7 @@
-/***************************************************************************
- # Copyright (c) 2015-23, NVIDIA CORPORATION. All rights reserved.
- #
- # Redistribution and use in source and binary forms, with or without
- # modification, are permitted provided that the following conditions
- # are met:
- #  * Redistributions of source code must retain the above copyright
- #    notice, this list of conditions and the following disclaimer.
- #  * Redistributions in binary form must reproduce the above copyright
- #    notice, this list of conditions and the following disclaimer in the
- #    documentation and/or other materials provided with the distribution.
- #  * Neither the name of NVIDIA CORPORATION nor the names of its
- #    contributors may be used to endorse or promote products derived
- #    from this software without specific prior written permission.
- #
- # THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS "AS IS" AND ANY
- # EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- # IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- # PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- # CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- # EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- # PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- # PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- # OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- **************************************************************************/
-
-/**
- * Minimal path tracer.
- *
- * The purpose is to use it for validation of more complex renderers.
- * The implementation here should be kept as simple/naive as possible.
- *
- * At each hit point (including the primary hit loaded from the V-buffer),
- * analytic light sources (point, directional) are sampled uniformly using
- * 1 shadow ray, and 1 scatter ray is traced to sample the hemisphere.
- * At hit/miss the scatter ray includes light from emissive surface and
- * the environment map, respectively. Traversal stops at a fixed path length.
- *
- * Each type of light (analytic, emissive, env map) can be individually
- * enabled/disabled from the host. This clutters the code a bit, but it is
- * important as not all other renderes may support all three light types.
- *
- * The host sets the following defines:
- *
- * MAX_BOUNCES             Maximum number of indirect bounces (0 means no indirect).
- * COMPUTE_DIRECT          Nonzero if direct illumination should be included.
- * USE_IMPORTANCE_SAMPLING Nonzero if importance sampling should be used for sampling materials.
- * USE_ANALYTIC_LIGHTS     Nonzero if Falcor's analytic lights should be used.
- * USE_EMISSIVE_LIGHTS     Nonzero if emissive geometry should be used as lights.
- * USE_ENV_LIGHT           Nonzero if env map is available and should be used as light source.
- * USE_ENV_BACKGROUND      Nonzero if env map is available and should be used as background.
- * is_valid_<name>         1 if optional I/O buffer with this name should be used.
- */
-
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
+import Params;
 import Scene.Raytracing;
 import Scene.Intersection;
 import Utils.Math.MathHelpers;
@@ -76,6 +21,8 @@ Texture2D<float4> gViewW; // Optional
 
 // Outputs
 RWTexture2D<float4> gOutputColor;
+RWStructuredBuffer<RadianceQuery> gRadianceQuries;
+RWStructuredBuffer<RadianceTarget> gRadianceTargets;
 
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
@@ -392,6 +339,8 @@ void handleHit(const HitInfo hit, inout ScatterRayData rayData)
  */
 float3 tracePath(const uint2 pixel, const uint2 frameDim)
 {
+    //信息不在hitInfo里，在Gbuffer里和rayData里
+
     float3 outColor = float3(0.f);
 
     const float3 primaryRayOrigin = gScene.camera.getPosition();
@@ -458,11 +407,37 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
         // Store contribution from scatter ray.
         outColor += rayData.radiance;
+
+
+        //NRC
+        // 这里先只放入所有路径第一次碰撞得到的信息，而不是路径上所有的点
+        //raydata里只有origin没有方向，只有下一次bounce的方向
+        uint32_t idx = pixel.x + pixel.y * frameDim.x;
+        RadianceQuery query = generateQuery(sd);
+
+        // query.pos = gBuf.posW;//前者是三维，后者是四维，建议研究下renderGraph连在他之前的那个
+        // query.roughness = gBuf.posW;
+        // query.normal = gBuf.normW;
+        //int matId = sd.materialID;
+
+        RadianceTarget target = {};
+        target.radiance = rayData.radiance;
+       
+        gRadianceQuries[idx] = query;
+        gRadianceTargets[idx] = target;
     }
     else
     {
         // Background pixel.
         outColor = kUseEnvBackground ? gScene.envMap.eval(primaryRayDir) : kDefaultBackgroundColor;
+
+        uint32_t idx = pixel.x + pixel.y * frameDim.x;
+        RadianceQuery query = {}; 
+        RadianceTarget target = {};
+
+       
+        gRadianceQuries[idx] = generateEmptyQuery();
+        gRadianceTargets[idx] = target;
     }
 
     return outColor;
@@ -620,4 +595,34 @@ void rayGen()
     float3 color = tracePath(pixel, frameDim);
 
     gOutputColor[pixel] = float4(color, 1.f);
+}
+
+RadianceQuery generateQuery(ShadingData sd)
+{
+    RadianceQuery query = { };
+    query.pos = sd.posW;
+    query.dir = world_to_latlong_map(sd.V);
+    float3 faceN = sd.frontFacing ? sd.faceN : -sd.faceN; 
+    query.normal = world_to_latlong_map(faceN);    // reverse the normal if the primitive is seen on the back-face side.
+    /*    query.diffuse = float4(sd.diffuse, 1);
+        query.specular = float4(sd.specular, 1);*/
+    //query.diffuse = sd.diffuse;
+    //query.specular = sd.specular;
+    //query.roughness = sd.linearRoughness;
+    query.diffuse = float3(0.f);
+    query.specular = float3(0.f);
+    query.roughness = 0.f;
+    return query;
+}
+
+RadianceQuery generateEmptyQuery()
+{
+    RadianceQuery query = { };
+    query.pos = float3(0.f);
+    query.dir = float2(0.f);
+    query.normal = float2(0.f);    // reverse the normal if the primitive is seen on the back-face side.
+    query.diffuse = float3(0.f);
+    query.specular = float3(0.f);
+    query.roughness = 0.f;
+    return query;
 }

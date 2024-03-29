@@ -69,6 +69,53 @@ Properties MinimalPathTracer::getProperties() const
     return props;
 }
 
+void MinimalPathTracer::prepareQueryBuffer(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    const auto& pInputViewDir = renderData.getTexture(kInputViewDir);
+    mParams.frameDim = Falcor::uint2(pInputViewDir->getWidth(), pInputViewDir->getHeight());
+
+    //这里这个buffer的大小有点问题
+    if (!myRadianceQueryBuffer)
+    {
+        myRadianceQueryBuffer = mpDevice->createStructuredBuffer(
+            sizeof(RadianceQuery),
+            mParams.frameDim.x * mParams.frameDim.y,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess | ResourceBindFlags::Shared,
+            MemoryType::DeviceLocal,
+            nullptr,
+            false
+        );
+        myRadianceQueryCudaBuffer = createInteropBuffer(mpDevice, sizeof(RadianceQuery) * mParams.frameDim.x * mParams.frameDim.y);
+    }
+    if (!myRadianceTargetBuffer)
+    {
+        myRadianceTargetBuffer = mpDevice->createStructuredBuffer(
+            sizeof(RadianceTarget),
+            mParams.frameDim.x * mParams.frameDim.y,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess | ResourceBindFlags::Shared,
+            MemoryType::DeviceLocal,
+            nullptr,
+            false
+        );
+        myRadianceTargetCudaBuffer = createInteropBuffer(mpDevice, sizeof(RadianceTarget) * mParams.frameDim.x * mParams.frameDim.y);
+    }
+
+    uint32_t usageFlags = cudaArrayColorAttachment;
+    if (!mOutputTex)
+    {
+        mOutputTex = mpDevice->createTexture2D(
+            mParams.frameDim.x,
+            mParams.frameDim.y,
+            ResourceFormat::RGBA32Float,
+            1,
+            1,
+            nullptr,
+            ResourceBindFlags::UnorderedAccess | ResourceBindFlags::Shared | ResourceBindFlags::ShaderResource
+        );
+        mOutputSurf = cuda_utils::mapTextureToSurface(mOutputTex, usageFlags);
+    }
+}
+
 RenderPassReflection MinimalPathTracer::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflector;
@@ -102,6 +149,8 @@ void MinimalPathTracer::execute(RenderContext* pRenderContext, const RenderData&
         }
         return;
     }
+
+    
 
     if (is_set(mpScene->getUpdates(), Scene::UpdateFlags::RecompileNeeded) ||
         is_set(mpScene->getUpdates(), Scene::UpdateFlags::GeometryChanged))
@@ -143,10 +192,14 @@ void MinimalPathTracer::execute(RenderContext* pRenderContext, const RenderData&
         prepareVars();
     FALCOR_ASSERT(mTracer.pVars);
 
+    prepareQueryBuffer(pRenderContext, renderData);
+
     // Set constants.
     auto var = mTracer.pVars->getRootVar();
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
+    var["gRadianceQuries"] = myRadianceQueryBuffer;
+    var["gRadianceTargets"] = myRadianceTargetBuffer;
 
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
     auto bind = [&](const ChannelDesc& desc)
@@ -173,8 +226,17 @@ void MinimalPathTracer::execute(RenderContext* pRenderContext, const RenderData&
         mNetwork = new NRCNetwork(targetDim.x, targetDim.y);
     }
     mNetwork->Test();
+    NRCTrain(pRenderContext);
 
     mFrameCount++;
+}
+
+void MinimalPathTracer::NRCTrain(RenderContext* pRenderContext)
+{
+    float loss;
+    pRenderContext->copyResource(myRadianceQueryCudaBuffer.buffer.get(), myRadianceQueryBuffer.get());
+    pRenderContext->copyResource(myRadianceTargetCudaBuffer.buffer.get(), myRadianceTargetBuffer.get());
+    mNetwork->train((RadianceQuery*)myRadianceQueryCudaBuffer.devicePtr, (RadianceTarget*)myRadianceTargetCudaBuffer.devicePtr, loss);
 }
 
 void MinimalPathTracer::renderUI(Gui::Widgets& widget)

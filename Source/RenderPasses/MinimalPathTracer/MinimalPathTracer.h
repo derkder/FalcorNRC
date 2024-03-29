@@ -71,6 +71,9 @@ public:
 private:
     void parseProperties(const Properties& props);
     void prepareVars();
+    void prepareQueryBuffer(RenderContext* pRenderContext, const RenderData& renderData);
+    void NRCForward(RenderContext* pRenderContext);
+    void NRCTrain(RenderContext* pRenderContext);
 
     // Internal state
 
@@ -104,9 +107,12 @@ private:
 
     // NRC
     NRCNetwork* mNRCNetwork;
-    ref<Buffer> myNRCQueryBuffer;
-    InteropBuffer myNRCQueryCudaBuffer;
+    ref<Buffer> myRadianceQueryBuffer;
+    InteropBuffer myRadianceQueryCudaBuffer;
+    ref<Buffer> myRadianceTargetBuffer;
+    InteropBuffer myRadianceTargetCudaBuffer;
     ref<Texture> mOutputTex;
     cudaSurfaceObject_t mOutputSurf;
     NRCNetwork* mNetwork = nullptr;
+    CommonParams mParams;
 };

@@ -414,11 +414,6 @@ void PathTracer::execute(RenderContext* pRenderContext, const RenderData& render
 {
     if (!beginFrame(pRenderContext, renderData)) return;
 
-    if(!mNetwork)
-    {
-        mNetwork = new NRCNetwork(mParams.frameDim.x, mParams.frameDim.y);
-    }
-    mNetwork->Test();
 
     // Update shader program specialization.
     updatePrograms();

@@ -1,4 +1,4 @@
-﻿#include "Network.h"
+#include "Network.h"
 
 #include <fstream>
 #include <iostream>
@@ -24,15 +24,16 @@ struct NetworkComponents
 
 struct IOData
 {
-    GPUMatrix<float>* input_mat = nullptr;
-    GPUMatrix<float>* output_mat = nullptr;
+    GPUMatrix<float>* render_input_mat = nullptr;
+    GPUMatrix<float>* render_output_mat = nullptr;
 
-    GPUMatrixDynamic<float>* training_input_mat = nullptr;
+    GPUMatrix<float>* training_input_mat = nullptr;
     GPUMatrix<float>* training_output_mat = nullptr;
 };
 
 cudaStream_t inference_stream = nullptr;
 cudaStream_t training_stream = nullptr;
+
 
 NetworkComponents* mNetworkComponents = nullptr;
 
@@ -40,96 +41,55 @@ IOData* mIOData = nullptr;
 
 } // namespace
 
-// template<uint32_t stride, typename T = float>
-//__global__ void generateTrainingDataFromSamples(
-//     uint32_t n_elements,
-//     uint32_t offset,
-//     Falcor::RadianceSample* samples,
-//     Falcor::RadianceQuery* self_queries,
-//     T* self_query_pred,
-//     T* training_data,
-//     T* training_target,
-//     uint32_t* training_sample_counter,
-//     uint32_t* self_query_counter,
-//     float* random_indices = nullptr
-//)
-//{
-//     uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-//     if (i + offset > n_elements)
-//         return;
-//     int data_index = i * stride, sample_index = i + offset;
-//     if (random_indices)
-//         sample_index = (1 - random_indices[sample_index]) * *training_sample_counter;
-//
-//     int pred_index = samples[sample_index].idx; // pred_index == -1 if a self-query is not needed.
-//
-//     if (sample_index < *training_sample_counter)
-//     {
-//         float3 factor = samples[sample_index].a, bias = samples[sample_index].b;
-//         uint32_t output_index = i * 3;
-//
-//         copyQuery(&training_data[data_index], &samples[sample_index].query);
-//
-//         float3 pred_radiance = {0, 0, 0};
-//         if (pred_index >= 0) // else the sample doesn't contain a self query.
-//             pred_radiance = {self_query_pred[pred_index * 3], self_query_pred[pred_index * 3 + 1], self_query_pred[pred_index * 3 + 2]};
-// #if REFLECTANCE_FACT
-//         float3 reflectance = samples[sample_index].query.diffuse + samples[sample_index].query.specular;
-//         if (pred_index >= 0)
-//             // restore self-query from reflectance factorization...
-//             pred_radiance = pred_radiance * (self_queries[pred_index].diffuse + self_queries[pred_index].specular);
-//         float3 radiance = safe_div(pred_radiance * factor + bias, reflectance);
-// #else
-//         float3 radiance = pred_radiance * factor + bias;
-// #endif
-//         *(float3*)&training_target[output_index] = radiance;
-//     }
-// }
-//
-//template<typename T, uint32_t stride>
-//__global__ void formatInput(uint32_t n_elements, Falcor::RadianceQuery* queries, T* input)
-//{
-//    uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-//    if (i >= n_elements)
-//        return;
-//
-//    Falcor::RadianceQuery query = queries[i];
-//
-//    input[i * stride + 0] = query.posW.x;
-//    input[i * stride + 1] = query.posW.y;
-//    input[i * stride + 2] = query.posW.z;
-//    input[i * stride + 3] = query.normalW.x;
-//    input[i * stride + 4] = query.normalW.y;
-//    input[i * stride + 5] = query.normalW.z;
-//    input[i * stride + 6] = query.wiW.x;
-//    input[i * stride + 7] = query.wiW.y;
-//    input[i * stride + 8] = query.wiW.z;
-//    input[i * stride + 9] = query.diff.x;
-//    input[i * stride + 10] = query.diff.y;
-//    input[i * stride + 11] = query.diff.z;
-//}
-//
-//template<typename T, uint32_t stride>
-//__global__ void mapToOutSurf(uint32_t n_elements, uint32_t width, T* output, cudaSurfaceObject_t outSurf)
-//{
-//    uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-//    if (i >= n_elements)
-//        return;
-//
-//    uint32_t x = i % width;
-//    uint32_t y = i / width;
-//
-//    float4 color = {0, 0, 0, 1};
-//
-//    color.x = output[i * stride + 0];
-//    color.y = output[i * stride + 1];
-//    color.z = output[i * stride + 2];
-//
-//    surf2Dwrite(color, outSurf, x * sizeof(float4), y);
-//}
+template<typename T, uint32_t input_stride, uint32_t output_stride>
+__global__ void formatInputTarget(uint32_t n_elements, Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets, T* input, T* output)
+{
+    uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_elements)
+        return;
+
+    Falcor::RadianceQuery query = queries[i];
+    Falcor::RadianceTarget target = targets[i];
+
+    input[i * input_stride + 0] = query.pos.x, input[i * input_stride + 1] = query.pos.y, input[i * input_stride + 2] = query.pos.z;
+    input[i * input_stride + 3] = query.dir.x, input[i * input_stride + 4] = query.dir.y;
+
+    input[i * input_stride + 5] = query.roughness;
+    input[i * input_stride + 6] = query.normal.x, input[i * input_stride + 7] = query.normal.y;
+    input[i * input_stride + 8] = query.diffuse.x, input[i * input_stride + 9] = query.diffuse.y, input[i * input_stride + 10] = query.diffuse.z;
+    input[i * input_stride + 11] = query.specular.x, input[i * input_stride + 12] = query.specular.y,
+    input[i * input_stride + 13] = query.specular.z;
+
+    output[i * output_stride + 0] = target.radiance.x, output[i * output_stride + 1] = target.radiance.y, output[i * output_stride + 2] = target.radiance.z;
+
+   
+}
+
+//下面的output应该是radiance，最后一维是output
+template<typename T, uint32_t stride>
+__global__ void mapToOutSurf(uint32_t n_elements, uint32_t width, T* output, cudaSurfaceObject_t outSurf)
+{
+    uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_elements)
+        return;
+
+    uint32_t x = i % width;
+    uint32_t y = i / width;
+
+    float4 color = {0, 0, 0, 1};
+
+    color.x = output[i * stride + 0];
+    color.y = output[i * stride + 1];
+    color.z = output[i * stride + 2];
+
+    surf2Dwrite(color, outSurf, x * sizeof(float4), y);
+}
+
 
 NRCNetwork :: NRCNetwork(const uint32_t width, const uint32_t height)
 {
+    std::cout << "Hello World!" << width << height << std::endl;
+
     CUDA_CHECK_THROW(cudaStreamCreate(&inference_stream));
     CUDA_CHECK_THROW(cudaStreamCreate(&training_stream));
 
@@ -181,8 +141,8 @@ NRCNetwork :: NRCNetwork(const uint32_t width, const uint32_t height)
     // 但是注释掉不注释掉渲染出的图像是不一样的，所以反正之前是用了权重数据的
     // mNetworkComponents->trainer->deserialize(loaded_weights);
 
-    mIOData->input_mat = new GPUMatrix<float>(NetConfig::n_input_dims, width * height);
-    mIOData->output_mat = new GPUMatrix<float>(NetConfig::n_output_dims, width * height);
+    mIOData->render_input_mat = new GPUMatrix<float>(NetConfig::n_input_dims, width * height);
+    mIOData->render_output_mat = new GPUMatrix<float>(NetConfig::n_output_dims, width * height);
     mIOData->training_input_mat = new GPUMatrix<float>(NetConfig::n_input_dims, width * height);
     mIOData->training_output_mat = new GPUMatrix<float>(NetConfig::n_output_dims, width * height);
 
@@ -198,22 +158,58 @@ NRCNetwork::~NRCNetwork()
 
 void NRCNetwork::Test()
 {
-    std::cout << "Hello World!" << std::endl;
+    //std::cout << "Hello World!" << std::endl;
 }
 
+
+void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets, float& loss)
+{
+    std::cout << "Hello World!" << std::endl;
+    uint32_t n_elements = frame_width * frame_height;
+    mNetworkComponents->optimizer->set_learning_rate(learning_rate);
+
+    linear_kernel(formatInputTarget<float, NetConfig::n_input_dims, NetConfig::n_output_dims>, 0, training_stream, n_elements, queries, targets,
+        mIOData->training_input_mat->data(), mIOData->training_output_mat->data()
+    );
+
+    //std::cout << "input[i * stride + 0]" << mIOData->training_input_mat->data() << std::endl;
+    //std::cout << "output[i * stride + 0]" << mIOData->training_output_mat->data() << std::endl;
+
+    //我真的不理解为什么w加了这个，应该是如果网络里放过了就不重复喂了？
+    //mNetworkComponents->network->inference(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
+    //下面的错了
+    auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
+    //float tmp_loss = 0;
+    //tmp_loss += mNetworkComponents->trainer->loss(training_stream, *ctx);
+    CUDA_CHECK_THROW(cudaStreamSynchronize(training_stream));
+}
+
+
 //
+//void NRCNetwork ::forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t output)
+//{
+//    uint32_t n_elements = frame_width * frame_height;
+//
+//    linear_kernel(formatInput<float, NetConfig::n_input_dims>, 0, inference_stream, n_elements, queries, mIOData->render_input_mat->data());
+//    mNetworkComponents->network->inference(inference_stream, *mIOData->render_input_mat, *mIOData->render_output_mat);
+//
+//    linear_kernel(mapToOutSurf<float, NetConfig::n_output_dims>, 0, inference_stream, n_elements, frame_width, mIOData->render_output_mat->data(), output);
+//    CUDA_CHECK_THROW(cudaStreamSynchronize(inference_stream));
+//}
+
+
+////
 //void NRCNetwork::forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t output)
 //{
 //    uint32_t n_elements = frame_width * frame_height;
 //
 //    // 将查询数据（queries）转换为神经网络的输入张量
-//    linear_kernel(formatInput<float, NetConfig::n_input_dims>, 0, inference_stream, n_elements, queries, mIOData->input_mat->data());
-//
-//    mNetworkComponents->network->inference(inference_stream, *mIOData->input_mat, *mIOData->output_mat);
+//    linear_kernel(formatInput<float, NetConfig::n_input_dims>, 0, inference_stream, n_elements, queries, mIOData->render_input_mat->data());
+//    mNetworkComponents->network->inference(inference_stream, *mIOData->render_input_mat, *mIOData->render_output_mat);
 //
 //    // 将网络推断的结果映射或渲染到输出表面
 //    linear_kernel(
-//        mapToOutSurf<float, NetConfig::n_output_dims>, 0, inference_stream, n_elements, frame_width, mIOData->output_mat->data(), output
+//        mapToOutSurf<float, NetConfig::n_output_dims>, 0, inference_stream, n_elements, frame_width, mIOData->render_output_mat->data(), output
 //    );
 //}
 //
