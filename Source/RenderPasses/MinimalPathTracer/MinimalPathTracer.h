@@ -71,6 +71,7 @@ public:
 private:
     void parseProperties(const Properties& props);
     void prepareVars();
+    void prepareResolve(const RenderData& renderData);
     void prepareQueryBuffer(RenderContext* pRenderContext, const RenderData& renderData);
     void NRCForward(RenderContext* pRenderContext);
     void NRCTrain(RenderContext* pRenderContext);
@@ -106,13 +107,19 @@ private:
     } mTracer;
 
     // NRC
+    NRCNetwork* mNetwork = nullptr;
+    CommonParams mParams;
+    ref<ComputePass> mpResolvePass;
+    //train part
     NRCNetwork* mNRCNetwork;
     ref<Buffer> myRadianceQueryBuffer;
     InteropBuffer myRadianceQueryCudaBuffer;
     ref<Buffer> myRadianceTargetBuffer;
     InteropBuffer myRadianceTargetCudaBuffer;
+
+    //render part可能这里用的surfaceObj会更好一点
+    ref<Buffer> renderQueryBuffer;
+    InteropBuffer renderQueryCudaBuffer;
     ref<Texture> mOutputTex;
     cudaSurfaceObject_t mOutputSurf;
-    NRCNetwork* mNetwork = nullptr;
-    CommonParams mParams;
 };

@@ -8,6 +8,7 @@ target_sources(MinimalPathTracer PRIVATE
     Network.h
     Network.cu
     Params.slang
+    ResolvePass.cs.slang
 )
 
 target_link_libraries(MinimalPathTracer PRIVATE tiny-cuda-nn)

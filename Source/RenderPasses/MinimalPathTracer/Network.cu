@@ -38,6 +38,7 @@ cudaStream_t training_stream = nullptr;
 NetworkComponents* mNetworkComponents = nullptr;
 
 IOData* mIOData = nullptr;
+json loaded_weights;
 
 } // namespace
 
@@ -65,7 +66,27 @@ __global__ void formatInputTarget(uint32_t n_elements, Falcor::RadianceQuery* qu
    
 }
 
-//下面的output应该是radiance，最后一维是output
+template<typename T, uint32_t input_stride>
+__global__ void formatRenderInput(uint32_t n_elements, Falcor::RadianceQuery* queries, T* input)
+{
+    uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i >= n_elements)
+        return;
+
+    Falcor::RadianceQuery query = queries[i];
+
+    input[i * input_stride + 0] = query.pos.x, input[i * input_stride + 1] = query.pos.y, input[i * input_stride + 2] = query.pos.z;
+    input[i * input_stride + 3] = query.dir.x, input[i * input_stride + 4] = query.dir.y;
+
+    input[i * input_stride + 5] = query.roughness;
+    input[i * input_stride + 6] = query.normal.x, input[i * input_stride + 7] = query.normal.y;
+    input[i * input_stride + 8] = query.diffuse.x, input[i * input_stride + 9] = query.diffuse.y,
+                             input[i * input_stride + 10] = query.diffuse.z;
+    input[i * input_stride + 11] = query.specular.x, input[i * input_stride + 12] = query.specular.y,
+                             input[i * input_stride + 13] = query.specular.z;
+
+}
+
 template<typename T, uint32_t stride>
 __global__ void mapToOutSurf(uint32_t n_elements, uint32_t width, T* output, cudaSurfaceObject_t outSurf)
 {
@@ -164,7 +185,7 @@ void NRCNetwork::Test()
 
 void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets, float& loss)
 {
-    std::cout << "Hello World!" << std::endl;
+    //std::cout << "Hello World!" << std::endl;
     uint32_t n_elements = frame_width * frame_height;
     mNetworkComponents->optimizer->set_learning_rate(learning_rate);
 
@@ -177,25 +198,36 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
 
     //我真的不理解为什么w加了这个，应该是如果网络里放过了就不重复喂了？
     //mNetworkComponents->network->inference(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
-    //下面的错了
     auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
     //float tmp_loss = 0;
     //tmp_loss += mNetworkComponents->trainer->loss(training_stream, *ctx);
+
+    //json loaded_weights;
+    //loaded_weights = mNetworkComponents->trainer->serialize(false);
+    //std::cout << loaded_weights.dump(4) << std::endl;
+    //if (loaded_weights) std::cout << "Hello World!" << std::endl;
+    //else std::cout << "MD World!" << std::endl;
+    //std::string network_config_save_path = "network_weights.json";
+    //std::ofstream of(network_config_save_path);
+    //of << loaded_weights.dump(4);
+    //of.close();
     CUDA_CHECK_THROW(cudaStreamSynchronize(training_stream));
 }
 
 
-//
-//void NRCNetwork ::forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t output)
-//{
-//    uint32_t n_elements = frame_width * frame_height;
-//
-//    linear_kernel(formatInput<float, NetConfig::n_input_dims>, 0, inference_stream, n_elements, queries, mIOData->render_input_mat->data());
-//    mNetworkComponents->network->inference(inference_stream, *mIOData->render_input_mat, *mIOData->render_output_mat);
-//
-//    linear_kernel(mapToOutSurf<float, NetConfig::n_output_dims>, 0, inference_stream, n_elements, frame_width, mIOData->render_output_mat->data(), output);
-//    CUDA_CHECK_THROW(cudaStreamSynchronize(inference_stream));
-//}
+
+void NRCNetwork ::forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t output)
+{
+    uint32_t n_elements = frame_width * frame_height;
+    //mNetworkComponents->trainer->deserialize(loaded_weights);
+    linear_kernel(formatRenderInput<float, NetConfig::n_input_dims>, 0, inference_stream, n_elements, queries, mIOData->render_input_mat->data());
+    mNetworkComponents->network->inference(inference_stream, *mIOData->render_input_mat, *mIOData->render_output_mat);
+    linear_kernel(
+        mapToOutSurf<float, NetConfig::n_output_dims>, 0, inference_stream, n_elements, frame_width,
+        mIOData->render_output_mat->data(), output
+    );
+    CUDA_CHECK_THROW(cudaStreamSynchronize(inference_stream));
+}
 
 
 ////

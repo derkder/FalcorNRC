@@ -1,4 +1,4 @@
-﻿#include "NeuralRadiosity.h"
+#include "NeuralRadiosity.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
 
@@ -192,9 +192,11 @@ void NeuralRadiosity::execute(RenderContext* pRenderContext, const RenderData& r
 void NeuralRadiosity::neuralRadiosityForward(RenderContext* pRenderContext)
 {
     pRenderContext->copyResource(mpRadiosityQueryCudaBuffer.buffer.get(), mpRadiosityQueryBuffer.get());
+    //这里网络得到的结果会输出到mOutputSurf
     mNetwork->forward((RadiosityQuery*)mpRadiosityQueryCudaBuffer.devicePtr, mOutputSurf);
 }
 
+//为了测试训练瞎写的代码
 void NeuralRadiosity::neuralRadiosityTrain(RenderContext* pRenderContext)
 {
     float loss;

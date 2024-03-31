@@ -143,7 +143,7 @@ void RadiosityNetwork::forward(Falcor::RadiosityQuery* queries, cudaSurfaceObjec
 
     mNetworkComponents->network->inference(inference_stream, *mIOData->input_mat, *mIOData->output_mat);
 
-    //将网络推断的结果映射或渲染到输出表面
+    //将网络推断的结果映射或渲染到输出表面,输出到output上了
     linear_kernel(mapToOutSurf<float, NetConfig::n_output_dims>, 0, inference_stream, n_elements, frame_width, mIOData->output_mat->data(), output);
 } 
 

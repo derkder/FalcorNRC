@@ -24,6 +24,8 @@ RWTexture2D<float4> gOutputColor;
 RWStructuredBuffer<RadianceQuery> gRadianceQuries;
 RWStructuredBuffer<RadianceTarget> gRadianceTargets;
 
+RWStructuredBuffer<RadianceQuery> gRenderQuries;
+
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
 static const uint kMaxBounces = MAX_BOUNCES;
@@ -347,6 +349,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     const float3 primaryRayDir = getPrimaryRayDir(pixel, frameDim, gScene.camera);
 
     const HitInfo hit = HitInfo(gVBuffer[pixel]);
+    uint32_t idx = pixel.x + pixel.y * frameDim.x;
     if (hit.isValid())
     {
         // Pixel represents a valid primary hit. Compute its contribution.
@@ -421,10 +424,14 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         //int matId = sd.materialID;
 
         RadianceTarget target = {};
-        target.radiance = rayData.radiance;
-       
+        target.radiance = rayData.radiance; 
         gRadianceQuries[idx] = query;
         gRadianceTargets[idx] = target;
+
+        //不太对的样子render part
+        gRenderQuries[idx] = generateQuery(sd);
+        //outColor = gRenderTargets[idx].radiance;
+        //outColor = 0;
     }
     else
     {
@@ -440,6 +447,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         gRadianceTargets[idx] = target;
     }
 
+    
     return outColor;
 }
 
