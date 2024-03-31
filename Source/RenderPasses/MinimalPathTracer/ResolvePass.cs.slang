@@ -20,6 +20,6 @@ void main(uint3 dispatchThreadID: SV_DispatchThreadID)
 
     if (hit.isValid())
     {
-        //output[pixel] = radiance[pixel];
+        output[pixel] = radiance[pixel];
     }
 }

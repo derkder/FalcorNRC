@@ -431,7 +431,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         //不太对的样子render part
         gRenderQuries[idx] = generateQuery(sd);
         //outColor = gRenderTargets[idx].radiance;
-        //outColor = 0;
+        outColor = float3(0.f);
     }
     else
     {
