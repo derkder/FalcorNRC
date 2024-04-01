@@ -26,6 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #pragma once
+#include <cuda_runtime.h>
 #include "Falcor.h"
 #include "Network.h"
 #include "RenderGraph/RenderPass.h"
@@ -122,4 +123,8 @@ private:
     InteropBuffer renderQueryCudaBuffer;
     ref<Texture> mOutputTex;
     cudaSurfaceObject_t mOutputSurf;
+
+    //counterPart 很笨的实现
+    ref<Buffer> trainCountBuffer;
+    InteropBuffer trainCountCudaBuffer;
 };

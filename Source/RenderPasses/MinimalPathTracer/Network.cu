@@ -80,11 +80,8 @@ __global__ void formatRenderInput(uint32_t n_elements, Falcor::RadianceQuery* qu
 
     input[i * input_stride + 5] = query.roughness;
     input[i * input_stride + 6] = query.normal.x, input[i * input_stride + 7] = query.normal.y;
-    input[i * input_stride + 8] = query.diffuse.x, input[i * input_stride + 9] = query.diffuse.y,
-                             input[i * input_stride + 10] = query.diffuse.z;
-    input[i * input_stride + 11] = query.specular.x, input[i * input_stride + 12] = query.specular.y,
-                             input[i * input_stride + 13] = query.specular.z;
-
+    input[i * input_stride + 8] = query.diffuse.x, input[i * input_stride + 9] = query.diffuse.y, input[i * input_stride + 10] = query.diffuse.z;
+    input[i * input_stride + 11] = query.specular.x, input[i * input_stride + 12] = query.specular.y, input[i * input_stride + 13] = query.specular.z;
 }
 
 template<typename T, uint32_t stride>
@@ -158,9 +155,6 @@ NRCNetwork :: NRCNetwork(const uint32_t width, const uint32_t height)
     std::ifstream wf(w_path.str());
     json loaded_weights = json::parse(wf, nullptr, true, true);
 
-    // 下面注释掉了还能跑，我感觉是要注释掉的，应该换成训练好的weight但是好像也没有用这个就是了。
-    // 但是注释掉不注释掉渲染出的图像是不一样的，所以反正之前是用了权重数据的
-    // mNetworkComponents->trainer->deserialize(loaded_weights);
 
     mIOData->render_input_mat = new GPUMatrix<float>(NetConfig::n_input_dims, width * height);
     mIOData->render_output_mat = new GPUMatrix<float>(NetConfig::n_output_dims, width * height);
@@ -183,9 +177,11 @@ void NRCNetwork::Test()
 }
 
 
-void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets, float& loss)
+void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets, float& loss, Falcor::RadianceCounter* trainCounts)
 {
     //std::cout << "Hello World!" << std::endl;
+    //uint32_t n_elements = trainCounts[0].trainCounter;//targets能读到这里怎么会读不到呢
+    int temp = 3;
     uint32_t n_elements = frame_width * frame_height;
     mNetworkComponents->optimizer->set_learning_rate(learning_rate);
 
@@ -199,9 +195,9 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
     //我真的不理解为什么w加了这个，应该是如果网络里放过了就不重复喂了？
     //mNetworkComponents->network->inference(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
     auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
-    //float tmp_loss = 0;
-    //tmp_loss += mNetworkComponents->trainer->loss(training_stream, *ctx);
-
+    float tmp_loss = 0;
+    tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
+    std::cout << tmp_loss << std::endl;
     //json loaded_weights;
     //loaded_weights = mNetworkComponents->trainer->serialize(false);
     //std::cout << loaded_weights.dump(4) << std::endl;
@@ -218,6 +214,10 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
 
 void NRCNetwork ::forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t output)
 {
+    //json loaded_weights;
+    //loaded_weights = mNetworkComponents->trainer->serialize(false);
+    //std::cout << loaded_weights.dump(4) << std::endl;
+
     uint32_t n_elements = frame_width * frame_height;
     //mNetworkComponents->trainer->deserialize(loaded_weights);
     linear_kernel(formatRenderInput<float, NetConfig::n_input_dims>, 0, inference_stream, n_elements, queries, mIOData->render_input_mat->data());
@@ -229,76 +229,3 @@ void NRCNetwork ::forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t ou
     CUDA_CHECK_THROW(cudaStreamSynchronize(inference_stream));
 }
 
-
-////
-//void NRCNetwork::forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t output)
-//{
-//    uint32_t n_elements = frame_width * frame_height;
-//
-//    // 将查询数据（queries）转换为神经网络的输入张量
-//    linear_kernel(formatInput<float, NetConfig::n_input_dims>, 0, inference_stream, n_elements, queries, mIOData->render_input_mat->data());
-//    mNetworkComponents->network->inference(inference_stream, *mIOData->render_input_mat, *mIOData->render_output_mat);
-//
-//    // 将网络推断的结果映射或渲染到输出表面
-//    linear_kernel(
-//        mapToOutSurf<float, NetConfig::n_output_dims>, 0, inference_stream, n_elements, frame_width, mIOData->render_output_mat->data(), output
-//    );
-//}
-//
-//// 这里pada一些权重文件会改吗，我吐了
-//// 这个数据到底是从trainingstream里读还是queries里读的啊
-//// 这个linear_kernel应该是用来转成可以放到网络里的形式吧
-//void NRCNetwork::train(Falcor::RadianceQuery* queries, cudaSurfaceObject_t targets, float& loss)
-//{
-//    uint32_t n_elements = frame_width * frame_height;
-//    mNetworkComponents->optimizer->set_learning_rate(learning_rate);
-//
-//    /// self query,大胆猜测这个和上面的forward前两句一个道理
-//    // linear_kernel(
-//    //     formatInput<float, NetConfig::n_input_dims>,
-//    //     0,
-//    //     training_stream,
-//    //     self_query_batch_size,
-//    //     0,
-//    //     self_queries,
-//    //     mMemory->training_self_query->data()
-//    //);
-//    // mNetwork->network->inference(training_stream, *mMemory->training_self_query, *mMemory->training_self_pred);
-//    // 上面的mMemory->training_self_query就是*mIOData->input_mat，*mMemory->training_self_pre就是*mIOData->output_mat
-//
-//    linear_kernel(formatInput<float, NetConfig::n_input_dims>, 0, training_stream, n_elements, queries, mIOData->input_mat->data());
-//    mNetworkComponents->network->inference(training_stream, *mIOData->input_mat, *mIOData->output_mat);
-//
-//    // training
-//    // randomly select 4 training batches over all samples
-//    /*curandGenerateUniform(rng, mMemory->random_seq->data(), n_train_batch * batch_size);
-//    for (uint32_t i = 0; i < n_train_batch; i++)
-//    {
-//        linear_kernel(
-//            generateTrainingDataFromSamples<input_dim, float>,
-//            0,
-//            training_stream,
-//            batch_size,
-//            i * batch_size,
-//            training_samples,
-//            self_queries,
-//            mMemory->training_self_pred->data(),
-//            mMemory->training_data->data(),
-//            mMemory->training_target->data(),
-//            training_sample_counter,
-//            self_query_counter,
-//            mMemory->random_seq->data()
-//        );
-//        mNetworkComponents->trainer->training_step(training_stream, *mMemory->training_data, *mMemory->training_target, &loss);
-//    }*/
-//
-//    // auto loss_object = reinterpret_cast<tcnn::Loss<tcnn::network_precision_t>*>(&loss);
-//    // std::shared_ptr<tcnn::Loss<tcnn::network_precision_t>> loss_ptr(loss_object);
-//    // mNetworkComponents->trainer->set_loss(loss_ptr);
-//    // 我浅浅当第三个input的target是我pt算出来的结果
-//    mNetworkComponents->trainer->training_step(training_stream, *mIOData->input_mat, *mIOData->output_mat);
-//    // 下面的运行了，他只是不更新网络权重罢了。上面的最后一个输入参数改成input他就会闪退，所以我感觉是执行了的
-//    // std::cout << "Hello World!" << std::endl;
-//    //  确保所有CUDA操作都已完成
-//    CUDA_CHECK_THROW(cudaStreamSynchronize(training_stream));
-//}

@@ -8,7 +8,6 @@ struct CommonParams {
     uint    frameCount = 0;
 };
 
-//这里结构还得改一下，这是在瞎对齐
 struct RadianceQuery
 {
     float3 pos;     // the frequency encoding needs inputs to be mapped into [-1, 1]
@@ -25,6 +24,11 @@ struct RadianceTarget
 {
     float3 radiance;
     float _pad0;
+};
+
+struct RadianceCounter
+{
+    uint trainCounter;
 };
 
 END_NAMESPACE_FALCOR

@@ -14,7 +14,11 @@ public:
     void Test();
     //void forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t output);
     void forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t output);
-    void train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets, float& loss);
+    void train(
+        Falcor::RadianceQuery* queries,
+        Falcor::RadianceTarget* targets,
+        float& loss, Falcor::RadianceCounter* trainCounts
+    );
 
 private:
     uint32_t frame_width;

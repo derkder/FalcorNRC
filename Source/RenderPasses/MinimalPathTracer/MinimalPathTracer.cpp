@@ -76,33 +76,33 @@ void MinimalPathTracer::prepareQueryBuffer(RenderContext* pRenderContext, const 
 {
     const auto& pInputViewDir = renderData.getTexture(kInputViewDir);
     mParams.frameDim = Falcor::uint2(pInputViewDir->getWidth(), pInputViewDir->getHeight());
-
-    //这里这个buffer的大小有点问题
+    const int temp = 3;
+    //这里这个buffer的大小有点问题(应该大一点防止溢出？)
     if (!trainQueryBuffer)
     {
         trainQueryBuffer = mpDevice->createStructuredBuffer(
             sizeof(RadianceQuery),
-            mParams.frameDim.x * mParams.frameDim.y,
+            temp * mParams.frameDim.x * mParams.frameDim.y,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess | ResourceBindFlags::Shared,
             MemoryType::DeviceLocal,
             nullptr,
             false
         );
-        trainQueryCudaBuffer = createInteropBuffer(mpDevice, sizeof(RadianceQuery) * mParams.frameDim.x * mParams.frameDim.y);
+        trainQueryCudaBuffer = createInteropBuffer(mpDevice, temp * sizeof(RadianceQuery) * mParams.frameDim.x * mParams.frameDim.y);
     }
     if (!trainTargetBuffer)
     {
         trainTargetBuffer = mpDevice->createStructuredBuffer(
             sizeof(RadianceTarget),
-            mParams.frameDim.x * mParams.frameDim.y,
+            temp * mParams.frameDim.x * mParams.frameDim.y,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess | ResourceBindFlags::Shared,
             MemoryType::DeviceLocal,
             nullptr,
             false
         );
-        trainTargetCudaBuffer = createInteropBuffer(mpDevice, sizeof(RadianceTarget) * mParams.frameDim.x * mParams.frameDim.y);
+        trainTargetCudaBuffer = createInteropBuffer(mpDevice, temp * sizeof(RadianceTarget) * mParams.frameDim.x * mParams.frameDim.y);
     }
-    // 这里这个buffer的大小有点问题
+    // 
     if (!renderQueryBuffer)
     {
         renderQueryBuffer = mpDevice->createStructuredBuffer(
@@ -114,6 +114,20 @@ void MinimalPathTracer::prepareQueryBuffer(RenderContext* pRenderContext, const 
             false
         );
         renderQueryCudaBuffer = createInteropBuffer(mpDevice, sizeof(RadianceQuery) * mParams.frameDim.x * mParams.frameDim.y);
+    }
+
+    //其实是只用到第一个元素
+    if (!trainCountBuffer)
+    {
+        trainCountBuffer = mpDevice->createStructuredBuffer(
+            sizeof(RadianceCounter),
+            mParams.frameDim.x * mParams.frameDim.y,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess | ResourceBindFlags::Shared,
+            MemoryType::DeviceLocal,
+            nullptr,
+            false
+        );
+        trainCountCudaBuffer = createInteropBuffer(mpDevice, sizeof(RadianceCounter) * mParams.frameDim.x * mParams.frameDim.y);
     }
 
     uint32_t usageFlags = cudaArrayColorAttachment;
@@ -205,13 +219,16 @@ void MinimalPathTracer::execute(RenderContext* pRenderContext, const RenderData&
     prepareResolve(renderData);
     // Set constants.
     auto var = mTracer.pVars->getRootVar();
+    
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
     var["gRadianceQuries"] = trainQueryBuffer;
     var["gRadianceTargets"] = trainTargetBuffer;
 
     var["gRenderQuries"] = renderQueryBuffer;
+    var["TrainCount"] = trainCountBuffer;
 
+    
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
     auto bind = [&](const ChannelDesc& desc)
     {
@@ -255,7 +272,15 @@ void MinimalPathTracer::NRCTrain(RenderContext* pRenderContext)
     float loss;
     pRenderContext->copyResource(trainQueryCudaBuffer.buffer.get(), trainQueryBuffer.get());
     pRenderContext->copyResource(trainTargetCudaBuffer.buffer.get(), trainTargetBuffer.get());
-    mNetwork->train((RadianceQuery*)trainQueryCudaBuffer.devicePtr, (RadianceTarget*)trainTargetCudaBuffer.devicePtr, loss);
+    pRenderContext->copyResource(trainCountCudaBuffer.buffer.get(), trainCountBuffer.get());
+    //uint32_t* count = (uint32_t*)trainCountCudaBuffer.devicePtr;
+    //uint32_t trainCount = count[0];
+    mNetwork->train(
+        (RadianceQuery*)trainQueryCudaBuffer.devicePtr,
+        (RadianceTarget*)trainTargetCudaBuffer.devicePtr,
+        loss,
+        (RadianceCounter*)trainCountCudaBuffer.devicePtr
+    );
 }
 
 void MinimalPathTracer::renderUI(Gui::Widgets& widget)

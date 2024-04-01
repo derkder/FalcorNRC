@@ -2,6 +2,17 @@
     "files.associations": {
         "iosfwd": "cpp",
         "type_traits": "cpp",
-        "*.slang": "cpp"
+        "*.slang": "cpp",
+        "chrono": "cpp",
+        "format": "cpp",
+        "istream": "cpp",
+        "memory": "cpp",
+        "tuple": "cpp",
+        "utility": "cpp",
+        "xlocmes": "cpp",
+        "xlocmon": "cpp",
+        "xlocnum": "cpp",
+        "xloctime": "cpp",
+        "xutility": "cpp"
     }
 }
