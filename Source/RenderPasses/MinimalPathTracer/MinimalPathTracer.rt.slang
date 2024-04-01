@@ -416,7 +416,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         // 这里先只放入所有路径第一次碰撞得到的信息，而不是路径上所有的点
         //raydata里只有origin没有方向，只有下一次bounce的方向
         uint32_t idx = pixel.x + pixel.y * frameDim.x;
-        RadianceQuery query = generateQuery(sd);
+        RadianceQuery query = generateQuery(sd, mi.getProperties(sd));
 
         // query.pos = gBuf.posW;//前者是三维，后者是四维，建议研究下renderGraph连在他之前的那个
         // query.roughness = gBuf.posW;
@@ -424,12 +424,13 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         //int matId = sd.materialID;
 
         RadianceTarget target = {};
-        target.radiance = rayData.radiance; 
+        //target.radiance = rayData.radiance;
+        target.radiance = outColor;
         gRadianceQuries[idx] = query;
         gRadianceTargets[idx] = target;
 
-        //不太对的样子render part
-        gRenderQuries[idx] = generateQuery(sd);
+        //不太对的render part
+        gRenderQuries[idx] = generateQuery(sd, mi.getProperties(sd));
         //outColor = gRenderTargets[idx].radiance;
         outColor = float3(0.f);
     }
@@ -605,7 +606,7 @@ void rayGen()
     gOutputColor[pixel] = float4(color, 1.f);
 }
 
-RadianceQuery generateQuery(ShadingData sd)
+RadianceQuery generateQuery(ShadingData sd, BSDFProperties p)
 {
     RadianceQuery query = { };
     query.pos = sd.posW;
@@ -614,12 +615,12 @@ RadianceQuery generateQuery(ShadingData sd)
     query.normal = world_to_latlong_map(faceN);    // reverse the normal if the primitive is seen on the back-face side.
     /*    query.diffuse = float4(sd.diffuse, 1);
         query.specular = float4(sd.specular, 1);*/
-    //query.diffuse = sd.diffuse;
-    //query.specular = sd.specular;
-    //query.roughness = sd.linearRoughness;
-    query.diffuse = float3(0.f);
-    query.specular = float3(0.f);
-    query.roughness = 0.f;
+    query.diffuse = p.diffuseReflectionAlbedo;
+    query.specular = p.specularReflectance;
+    query.roughness = p.roughness;
+    //query.diffuse = float3(0.f);
+    //query.specular = float3(0.f);
+    //query.roughness = 0.f;
     return query;
 }
 

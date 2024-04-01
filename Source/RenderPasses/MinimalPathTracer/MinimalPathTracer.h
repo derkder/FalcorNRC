@@ -112,10 +112,10 @@ private:
     ref<ComputePass> mpResolvePass;
     //train part
     NRCNetwork* mNRCNetwork;
-    ref<Buffer> myRadianceQueryBuffer;
-    InteropBuffer myRadianceQueryCudaBuffer;
-    ref<Buffer> myRadianceTargetBuffer;
-    InteropBuffer myRadianceTargetCudaBuffer;
+    ref<Buffer> trainQueryBuffer;
+    InteropBuffer trainQueryCudaBuffer;
+    ref<Buffer> trainTargetBuffer;
+    InteropBuffer trainTargetCudaBuffer;
 
     //render part可能这里用的surfaceObj会更好一点
     ref<Buffer> renderQueryBuffer;

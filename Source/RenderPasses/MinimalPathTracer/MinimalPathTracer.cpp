@@ -78,9 +78,9 @@ void MinimalPathTracer::prepareQueryBuffer(RenderContext* pRenderContext, const 
     mParams.frameDim = Falcor::uint2(pInputViewDir->getWidth(), pInputViewDir->getHeight());
 
     //这里这个buffer的大小有点问题
-    if (!myRadianceQueryBuffer)
+    if (!trainQueryBuffer)
     {
-        myRadianceQueryBuffer = mpDevice->createStructuredBuffer(
+        trainQueryBuffer = mpDevice->createStructuredBuffer(
             sizeof(RadianceQuery),
             mParams.frameDim.x * mParams.frameDim.y,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess | ResourceBindFlags::Shared,
@@ -88,11 +88,11 @@ void MinimalPathTracer::prepareQueryBuffer(RenderContext* pRenderContext, const 
             nullptr,
             false
         );
-        myRadianceQueryCudaBuffer = createInteropBuffer(mpDevice, sizeof(RadianceQuery) * mParams.frameDim.x * mParams.frameDim.y);
+        trainQueryCudaBuffer = createInteropBuffer(mpDevice, sizeof(RadianceQuery) * mParams.frameDim.x * mParams.frameDim.y);
     }
-    if (!myRadianceTargetBuffer)
+    if (!trainTargetBuffer)
     {
-        myRadianceTargetBuffer = mpDevice->createStructuredBuffer(
+        trainTargetBuffer = mpDevice->createStructuredBuffer(
             sizeof(RadianceTarget),
             mParams.frameDim.x * mParams.frameDim.y,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess | ResourceBindFlags::Shared,
@@ -100,7 +100,7 @@ void MinimalPathTracer::prepareQueryBuffer(RenderContext* pRenderContext, const 
             nullptr,
             false
         );
-        myRadianceTargetCudaBuffer = createInteropBuffer(mpDevice, sizeof(RadianceTarget) * mParams.frameDim.x * mParams.frameDim.y);
+        trainTargetCudaBuffer = createInteropBuffer(mpDevice, sizeof(RadianceTarget) * mParams.frameDim.x * mParams.frameDim.y);
     }
     // 这里这个buffer的大小有点问题
     if (!renderQueryBuffer)
@@ -207,8 +207,8 @@ void MinimalPathTracer::execute(RenderContext* pRenderContext, const RenderData&
     auto var = mTracer.pVars->getRootVar();
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
-    var["gRadianceQuries"] = myRadianceQueryBuffer;
-    var["gRadianceTargets"] = myRadianceTargetBuffer;
+    var["gRadianceQuries"] = trainQueryBuffer;
+    var["gRadianceTargets"] = trainTargetBuffer;
 
     var["gRenderQuries"] = renderQueryBuffer;
 
@@ -253,9 +253,9 @@ void MinimalPathTracer::NRCForward(RenderContext* pRenderContext)
 void MinimalPathTracer::NRCTrain(RenderContext* pRenderContext)
 {
     float loss;
-    pRenderContext->copyResource(myRadianceQueryCudaBuffer.buffer.get(), myRadianceQueryBuffer.get());
-    pRenderContext->copyResource(myRadianceTargetCudaBuffer.buffer.get(), myRadianceTargetBuffer.get());
-    mNetwork->train((RadianceQuery*)myRadianceQueryCudaBuffer.devicePtr, (RadianceTarget*)myRadianceTargetCudaBuffer.devicePtr, loss);
+    pRenderContext->copyResource(trainQueryCudaBuffer.buffer.get(), trainQueryBuffer.get());
+    pRenderContext->copyResource(trainTargetCudaBuffer.buffer.get(), trainTargetBuffer.get());
+    mNetwork->train((RadianceQuery*)trainQueryCudaBuffer.devicePtr, (RadianceTarget*)trainTargetCudaBuffer.devicePtr, loss);
 }
 
 void MinimalPathTracer::renderUI(Gui::Widgets& widget)

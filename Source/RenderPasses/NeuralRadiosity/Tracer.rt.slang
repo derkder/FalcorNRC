@@ -456,6 +456,7 @@ void tracePath(const uint2 pixel, const uint2 frameDim)
         uint32_t idx = pixel.x + pixel.y * frameDim.x;
         gRadiosityQuries[idx] = query;
         //到这里只是把值传过去了，怎么没有接受的部分呢，好歹outcolor收一下吧！难道训练输出的cudaSurfaceObject_t这么神奇的
+        //懂了
     }
     else
     {
