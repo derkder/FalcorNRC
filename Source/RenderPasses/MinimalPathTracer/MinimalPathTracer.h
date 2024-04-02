@@ -124,7 +124,7 @@ private:
     ref<Texture> mOutputTex;
     cudaSurfaceObject_t mOutputSurf;
 
-    //counterPart 很笨的实现
-    ref<Buffer> trainCountBuffer;
-    InteropBuffer trainCountCudaBuffer;
+    
+    ref<Buffer> pSharedCounterBuffer;
+    uint32_t* trainingSampleCounter;
 };

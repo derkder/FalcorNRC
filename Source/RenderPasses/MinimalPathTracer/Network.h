@@ -17,7 +17,7 @@ public:
     void train(
         Falcor::RadianceQuery* queries,
         Falcor::RadianceTarget* targets,
-        float& loss, Falcor::RadianceCounter* trainCounts
+        float& loss, uint32_t* trainCounts
     );
 
 private:

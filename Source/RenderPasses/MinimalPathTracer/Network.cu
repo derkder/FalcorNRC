@@ -43,11 +43,14 @@ json loaded_weights;
 } // namespace
 
 template<typename T, uint32_t input_stride, uint32_t output_stride>
-__global__ void formatInputTarget(uint32_t n_elements, Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets, T* input, T* output)
+__global__ void formatInputTarget(uint32_t n_elements, Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets,
+    T* input, T* output, uint32_t* trainCount)
 {
+    n_elements = *trainCount;//woc居然只有这样可以读到，根本不能在外面读到一点儿
     uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_elements)
         return;
+    
 
     Falcor::RadianceQuery query = queries[i];
     Falcor::RadianceTarget target = targets[i];
@@ -177,16 +180,16 @@ void NRCNetwork::Test()
 }
 
 
-void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets, float& loss, Falcor::RadianceCounter* trainCounts)
+void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets, float& loss, uint32_t* trainCounts)
 {
     //std::cout << "Hello World!" << std::endl;
     //uint32_t n_elements = trainCounts[0].trainCounter;//targets能读到这里怎么会读不到呢
-    int temp = 3;
-    uint32_t n_elements = frame_width * frame_height;
+    //uint32_t n_elements = *trainCounts;
+    uint32_t n_elements = 3 * frame_width * frame_height;
     mNetworkComponents->optimizer->set_learning_rate(learning_rate);
 
     linear_kernel(formatInputTarget<float, NetConfig::n_input_dims, NetConfig::n_output_dims>, 0, training_stream, n_elements, queries, targets,
-        mIOData->training_input_mat->data(), mIOData->training_output_mat->data()
+        mIOData->training_input_mat->data(), mIOData->training_output_mat->data(), trainCounts
     );
 
     //std::cout << "input[i * stride + 0]" << mIOData->training_input_mat->data() << std::endl;
