@@ -199,8 +199,9 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
     //我真的不理解为什么w加了这个，应该是如果网络里放过了就不重复喂了？
     //mNetworkComponents->network->inference(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
     auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
-    //float tmp_loss = 0;
-    //tmp_loss += mNetworkComponents->trainer->loss(training_stream, *ctx);
+    float tmp_loss = 0;
+    tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
+    std::cout << tmp_loss << std::endl;
 
     //json loaded_weights;
     //loaded_weights = mNetworkComponents->trainer->serialize(false);
