@@ -43,6 +43,7 @@ static const float kRayTMax = FLT_MAX;
 
 static float3 recordR[MAX_BOUNCES + 1];
 static float3 recordT[MAX_BOUNCES + 1];
+static uint kCurBounces = 0;//当前像素弹射的最大次数
 
 /**
  * Payload for shadow ray.
@@ -289,12 +290,13 @@ void handleHit(const HitInfo hit, inout ScatterRayData rayData)//处理当前的
     ShadingData sd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
     // Create material instance.
     let mi = gScene.materials.getMaterialInstance(sd, lod);
-
+    recordT[rayData.pathLength + 1] = safe_div(rayData.thp, recordT[rayData.pathLength]);//哇这里填l - 100结果还是错的一样呢，还不会报错
     // Add emitted light.
     if (kUseEmissiveLights && (kComputeDirect || rayData.pathLength > 0))
     {
         rayData.radiance += rayData.thp * mi.getProperties(sd).emission;
         recordR[rayData.pathLength + 1] = mi.getProperties(sd).emission;
+        kCurBounces += 1;
     }
 
     // Check whether to terminate based on max depth.
@@ -324,7 +326,7 @@ void handleHit(const HitInfo hit, inout ScatterRayData rayData)//处理当前的
         recordR[rayData.pathLength + 1] += Lr;
     }
 
-    recordT[rayData.pathLength + 1] = safe_div(rayData.thp, recordT[rayData.pathLength]);
+    
 
     // Generate scatter ray for the next path segment.
     // The raygen shader will continue the path based on the returned payload.
@@ -439,7 +441,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             //recordT[0] = target;
             gRadianceQuries[idx] = query;
             recordR[0] = outColor;
-            recordT[0] = 1.0;
+            recordT[0] = float3(1.f);
+            kCurBounces += 1;
         }
         //第一次bounce之后的循环？
         // Follow path into the scene and compute its total contribution.
@@ -466,10 +469,12 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             }
         }
         if(isTrain){
-            gRadianceTargets[kMaxBounces].radiance = recordR[kMaxBounces];
-            for(int i = kMaxBounces - 1; i >= 0; --i){
+            gRadianceTargets[kCurBounces].radiance = recordR[kCurBounces];
+            for(int i = kCurBounces - 1; i >= 0; --i){
                 //gRadianceQuries[idx + i] = recordQ[i];
-                gRadianceTargets[idx + i].radiance = gRadianceTargets[idx + i + 1].radiance * recordT[i + 1] + recordR[i];
+                RadianceTarget target = {};
+                target.radiance = gRadianceTargets[idx + i + 1].radiance * recordT[i + 1] + recordR[i];
+                gRadianceTargets[idx + i] = target;
             }
         }
         
