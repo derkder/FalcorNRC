@@ -96,7 +96,8 @@ void MinimalPathTracer::prepareQueryBuffer(RenderContext* pRenderContext, const 
         );
         trainTargetCudaBuffer = createInteropBuffer(mpDevice, temp * sizeof(RadianceTarget) * mParams.frameDim.x * mParams.frameDim.y);
     }
-    // 
+    
+
     if (!renderQueryBuffer)
     {
         renderQueryBuffer = mpDevice->createStructuredBuffer(
@@ -112,6 +113,7 @@ void MinimalPathTracer::prepareQueryBuffer(RenderContext* pRenderContext, const 
     );
     uint32_t* counterBuffer = (uint32_t*)pSharedCounterBuffer.get()->getCudaMemory()->getMappedData();
     trainingSampleCounter = &counterBuffer[0];
+    
     
     if (pSharedCounterBuffer == nullptr)
     {
@@ -270,13 +272,12 @@ void MinimalPathTracer::NRCForward(RenderContext* pRenderContext)
 void MinimalPathTracer::NRCTrain(RenderContext* pRenderContext)
 {
     pRenderContext->copyBufferRegion(pSharedCounterBuffer.get(), 0, trainQueryBuffer->getUAVCounter().get(), 0, 4);
-    pRenderContext->copyBufferRegion(pSharedCounterBuffer.get(), 0, trainTargetBuffer->getUAVCounter().get(), 0, 4);
-    pRenderContext->copyBufferRegion(pSharedCounterBuffer.get(), 0, renderQueryBuffer->getUAVCounter().get(), 0, 4);
+    pRenderContext->copyBufferRegion(pSharedCounterBuffer.get(), 4, trainTargetBuffer->getUAVCounter().get(), 0, 4);
+    pRenderContext->copyBufferRegion(pSharedCounterBuffer.get(), 8, renderQueryBuffer->getUAVCounter().get(), 0, 4);
     
     //trainingSampleCounter = counterBuffer;
     //uint32_t temp = *trainingSampleCounter;
     
-
     float loss;
     pRenderContext->copyResource(trainQueryCudaBuffer.buffer.get(), trainQueryBuffer.get());
     pRenderContext->copyResource(trainTargetCudaBuffer.buffer.get(), trainTargetBuffer.get());

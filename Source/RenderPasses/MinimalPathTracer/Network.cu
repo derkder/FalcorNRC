@@ -42,6 +42,18 @@ json loaded_weights;
 
 } // namespace
 
+
+uint32_t showMsg_counter(uint32_t* dataOnDevice)
+{
+    uint32_t* dataOnHost = new uint32_t[1];
+    cudaMemcpy(dataOnHost, dataOnDevice, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    printf("%u\n", dataOnHost[0]);
+    uint32_t res = dataOnHost[0];
+    delete[] dataOnHost;
+    return res;
+}
+
+
 template<typename T, uint32_t input_stride, uint32_t output_stride>
 __global__ void formatInputTarget(uint32_t n_elements, Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets,
     T* input, T* output, uint32_t* trainCount)
@@ -194,13 +206,13 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
 
     //std::cout << "input[i * stride + 0]" << mIOData->training_input_mat->data() << std::endl;
     //std::cout << "output[i * stride + 0]" << mIOData->training_output_mat->data() << std::endl;
-
+    uint32_t temp = showMsg_counter(trainCounts);//一直是0，xsl
     //我真的不理解为什么w加了这个，应该是如果网络里放过了就不重复喂了？
     //mNetworkComponents->network->inference(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
     auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
     float tmp_loss = 0;
     tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
-    std::cout << tmp_loss << std::endl;
+    //std::cout << tmp_loss << std::endl;
     //json loaded_weights;
     //loaded_weights = mNetworkComponents->trainer->serialize(false);
     //std::cout << loaded_weights.dump(4) << std::endl;
