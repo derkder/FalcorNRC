@@ -24,12 +24,12 @@ RWTexture2D<float4> gOutputColor;
 RWStructuredBuffer<RadianceQuery> gRadianceQuries;
 RWStructuredBuffer<RadianceTarget> gRadianceTargets;
 RWStructuredBuffer<RadianceQuery> gRenderQuries;
-RWStructuredBuffer<RadianceCounter> TrainCount;//cpp里再累加
+RWStructuredBuffer<uint> TrainCount;//cpp里再累加
 
 static ShadingData lastSd;
 static float3 lastRadiance;
 static bool isTrain;//说明这个像素对应的路径的所有点都放到网络里
-static RadianceCounter radianceCounter = {};
+//static RadianceCounter radianceCounter = {};
 
 // Static configuration based on defines set from the host.
 #define is_valid(name) (is_valid_##name != 0)
@@ -358,6 +358,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
     const HitInfo hit = HitInfo(gVBuffer[pixel]);
     uint32_t idx = pixel.x + pixel.y * frameDim.x;
+    if(idx == frameDim.x * frameDim.y - 2){
+        TrainCount[0] = gRadianceQuries.IncrementCounter();
+    }
     if (hit.isValid())
     {
         //train加suffix抽4percent做训练query，render改下光线终止条件（本来按bounce次数终止的）
@@ -419,8 +422,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             target.radiance = outColor;
             gRadianceQuries[idxTrain] = query;
             gRadianceTargets[idxTrain] = target;
-            radianceCounter.trainCounter += 1;
-            TrainCount[0] = radianceCounter;
+            //radianceCounter.trainCounter += 1;
+            //TrainCount[0] = radianceCounter;
         }
         //第一次bounce之后的循环？
         // Follow path into the scene and compute its total contribution.
@@ -435,6 +438,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 //怎么知道这里的sd呢！我怎么知道这里bounce的材质呢！
                 //根据handleHit的调用方法，应该需要获取到当前用的啥shader捏
                 int idxTrain = gRadianceQuries.IncrementCounter();
+                //if(idxTrain > 10 ) return float3(0., 1., 0.);
                 RadianceQuery query = {};
                 let curMi = gScene.materials.getMaterialInstance(lastSd, lod);
                 query = generateQuery(lastSd, curMi.getProperties(lastSd));
@@ -442,9 +446,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 target.radiance = curOutColor;
                 gRadianceQuries[idxTrain] = query;
                 gRadianceTargets[idxTrain] = target;
-                radianceCounter = {};
-                radianceCounter.trainCounter += 1;
-                TrainCount[0] = radianceCounter;
+                //radianceCounter = {};
+                //radianceCounter.trainCounter += 1;
+                //TrainCount[0] = radianceCounter;
 
             }
         }
@@ -470,6 +474,11 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         gRenderQuries[idx] = generateQuery(lastSd, mi.getProperties(lastSd));
         //outColor = gRenderTargets[idx].radiance;
         outColor = float3(0.f);
+
+        //int idxTrain = gRadianceQuries.IncrementCounter();
+        //if(idxTrain > 1000 ) return float3(0., 1., 0.);
+        //else if(0 == idxTrain) return float3(1., 1., 1.);
+       
     }
     else
     {

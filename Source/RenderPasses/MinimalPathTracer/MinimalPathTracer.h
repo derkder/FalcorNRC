@@ -126,5 +126,5 @@ private:
 
     
     ref<Buffer> pSharedCounterBuffer;
-    uint32_t* trainingSampleCounter;
+    InteropBuffer pSharedCounterCudaBuffer;
 };
