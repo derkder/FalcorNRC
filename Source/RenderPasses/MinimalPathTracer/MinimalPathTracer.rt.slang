@@ -43,6 +43,10 @@ static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
 
+static float3 recordR[MAX_BOUNCES + 2];//radiance before throughtout
+static float3 recordT[MAX_BOUNCES + 2];//throughout
+static uint kCurBounces = 0;//当前像素弹射的最大次数
+
 /**
  * Payload for shadow ray.
  */
@@ -289,13 +293,16 @@ void handleHit(const HitInfo hit, inout ScatterRayData rayData)//处理当前的
     // Create material instance.
     let mi = gScene.materials.getMaterialInstance(sd, lod);
 
+    recordT[rayData.pathLength + 1] = safe_div(rayData.thp, recordT[rayData.pathLength]);
+
     // Add emitted light.
     if (kUseEmissiveLights && (kComputeDirect || rayData.pathLength > 0))
     {
         rayData.radiance += rayData.thp * mi.getProperties(sd).emission;
+        recordR[rayData.pathLength + 1] = mi.getProperties(sd).emission;
     }
 
-    // Check whether to terminate based on max depth.
+    // Check whether to terminate based on max depth.后面应该是这里加一个条件就可以实现那种特殊终止了
     if (rayData.pathLength >= kMaxBounces)
     {
         rayData.terminated = true;
@@ -319,6 +326,7 @@ void handleHit(const HitInfo hit, inout ScatterRayData rayData)//处理当前的
     {
         float3 Lr = evalDirectAnalytic(sd, mi, rayData.sg);
         rayData.radiance += rayData.thp * Lr;
+        recordR[rayData.pathLength + 1] += Lr;
     }
 
     // Generate scatter ray for the next path segment.
@@ -331,6 +339,15 @@ void handleHit(const HitInfo hit, inout ScatterRayData rayData)//处理当前的
     if(isTrain) lastSd = sd;
     
     rayData.pathLength++;
+}
+
+float3 safe_div(float3 a, float3 b)
+{
+    float3 res = a / b;
+    res.x = isinf(res.x) || isnan(res.x) ? 0 : res.x;
+    res.y = isinf(res.y) || isnan(res.y) ? 0 : res.y;
+    res.z = isinf(res.z) || isnan(res.z) ? 0 : res.z;
+    return res;
 }
 
 /**
@@ -418,21 +435,25 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             //target.radiance = rayData.radiance;
             int idxTrain = gRadianceQuries.IncrementCounter();
             RadianceQuery query = generateQuery(sd, mi.getProperties(sd));
-            RadianceTarget target = {};
-            target.radiance = outColor;
             gRadianceQuries[idxTrain] = query;
-            gRadianceTargets[idxTrain] = target;
+            
+            
+            recordR[0] = outColor;
+            recordT[0] = float3(1.f);
+            kCurBounces += 1;
+            //gRadianceTargets[idxTrain] = target;
             //radianceCounter.trainCounter += 1;
             //TrainCount[0] = radianceCounter;
         }
+
         //第一次bounce之后的循环？
         // Follow path into the scene and compute its total contribution.
         for (uint depth = 0; depth <= kMaxBounces && !rayData.terminated; depth++)
         {
-            float3 curOutColor = float3(0.f);
+            //float3 curOutColor = float3(0.f);
             // Trace scatter ray. If it hits geometry, the closest hit shader samples
             // direct illumination and generates the next scatter ray.
-            curOutColor = traceScatterRay(rayData, isTrain, outColor);
+            //curOutColor = traceScatterRay(rayData, isTrain, outColor);
 
             if(isTrain){
                 //怎么知道这里的sd呢！我怎么知道这里bounce的材质呢！
@@ -442,14 +463,26 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 RadianceQuery query = {};
                 let curMi = gScene.materials.getMaterialInstance(lastSd, lod);
                 query = generateQuery(lastSd, curMi.getProperties(lastSd));
-                RadianceTarget target = {};
-                target.radiance = curOutColor;
+                //RadianceTarget target = {};
+                //target.radiance = curOutColor;
                 gRadianceQuries[idxTrain] = query;
-                gRadianceTargets[idxTrain] = target;
+                //gRadianceTargets[idxTrain] = target;
+                kCurBounces += 1;
                 //radianceCounter = {};
                 //radianceCounter.trainCounter += 1;
                 //TrainCount[0] = radianceCounter;
 
+            }
+        }
+
+        if(isTrain){
+            int temp = gRadianceTargets.IncrementCounter();
+            gRadianceTargets[temp + kCurBounces - 1].radiance = recordR[kCurBounces];
+            for(int i = kCurBounces - 2; i >= 0; --i){
+                //gRadianceQuries[idx + i] = recordQ[i];
+                RadianceTarget target = {};
+                target.radiance = gRadianceTargets[temp + i + 1].radiance * recordT[i + 1] + recordR[i];
+                gRadianceTargets[temp + i] = target;
             }
         }
 
