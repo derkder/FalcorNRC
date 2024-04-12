@@ -218,7 +218,8 @@ void MinimalPathTracer::execute(RenderContext* pRenderContext, const RenderData&
 
     pRenderContext->clearUAVCounter(trainQueryBuffer, 0);
     pRenderContext->clearUAVCounter(trainTargetBuffer, 0);
-    pRenderContext->clearUAVCounter(renderQueryBuffer, 0);
+    //pRenderContext->clearUAVCounter(renderQueryBuffer, 0);
+    //pRenderContext->clearUAVCounter(pSharedCounterBuffer, 0);
 
     
 

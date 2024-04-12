@@ -157,18 +157,18 @@ NRCNetwork :: NRCNetwork(const uint32_t width, const uint32_t height)
         mNetworkComponents->network, mNetworkComponents->optimizer, mNetworkComponents->loss
     );
 
-    filesystem::path w_path(NetConfig::weightsPath);
-    if (!w_path.exists())
-    {
-        std::cout << "Cannot find the weights!" << std::endl;
-        return;
-    }
-    else
-    {
-        std::cout << "Successfully find the weights!" << std::endl;
-    }
-    std::ifstream wf(w_path.str());
-    json loaded_weights = json::parse(wf, nullptr, true, true);
+    //filesystem::path w_path(NetConfig::weightsPath);
+    //if (!w_path.exists())
+    //{
+    //    std::cout << "Cannot find the weights!" << std::endl;
+    //    return;
+    //}
+    //else
+    //{
+    //    std::cout << "Successfully find the weights!" << std::endl;
+    //}
+    //std::ifstream wf(w_path.str());
+    //json loaded_weights = json::parse(wf, nullptr, true, true);
 
 
     mIOData->render_input_mat = new GPUMatrix<float>(NetConfig::n_input_dims, width * height);
@@ -197,7 +197,7 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
     //std::cout << "Hello World!" << std::endl;
     //uint32_t n_elements = trainCounts[0].trainCounter;//targets能读到这里怎么会读不到呢
     //uint32_t n_elements = *trainCounts;
-    uint32_t n_elements = 3 * frame_width * frame_height;
+    uint32_t n_elements = frame_width * frame_height;
     mNetworkComponents->optimizer->set_learning_rate(learning_rate);
 
     linear_kernel(formatInputTarget<float, NetConfig::n_input_dims, NetConfig::n_output_dims>, 0, training_stream, n_elements, queries, targets,
