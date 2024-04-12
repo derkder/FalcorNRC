@@ -193,7 +193,7 @@ bool traceShadowRay(float3 origin, float3 dir, float distance)
  * Traces a scatter ray based on ray parameters stored in the ray payload.
  * @param[in] rayData Describes the ray parameters. The struct is modified based on the result.
  */
-float3 traceScatterRay(inout ScatterRayData rayData, bool isTrain, float3 outColor)
+void traceScatterRay(inout ScatterRayData rayData)
 {
     RayDesc ray;
     ray.Origin = rayData.origin;
@@ -203,9 +203,6 @@ float3 traceScatterRay(inout ScatterRayData rayData, bool isTrain, float3 outCol
 
     uint rayFlags = 0; // TODO: Set cull mode from the app
     TraceRay(gScene.rtAccel, rayFlags, 0xff /* instanceInclusionMask */, 0 /* hitIdx */, rayTypeCount, 0 /* missIdx */, ray, rayData);
-    outColor += rayData.radiance;//因为raydata的radiance值是累计的
-    return outColor;
-    
 }
 
 /**
@@ -289,7 +286,7 @@ bool generateScatterRay(const ShadingData sd, const IMaterialInstance mi, bool i
  */
 void handleHit(const HitInfo hit, inout ScatterRayData rayData)//处理当前的hit并计算下一次hit用到的东西.被shader调用
 {
-    if(0 == rayData.pathLength) myTest = true;
+    //myTest = true;  
 
     const bool isCurveHit = hit.getType() == HitType::Curve;
     let lod = ExplicitLodTextureSampler(0.f);
@@ -460,11 +457,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         // Follow path into the scene and compute its total contribution.
         for (uint depth = 0; depth <= kMaxBounces && !rayData.terminated; depth++)
         {
-            //lastThp = rayData.thp;
-            //float3 curOutColor = float3(0.f);
             // Trace scatter ray. If it hits geometry, the closest hit shader samples
             // direct illumination and generates the next scatter ray.
-            traceScatterRay(rayData, isTrain, outColor);
+            traceScatterRay(rayData);
 
             if(isTrain){
                 RadianceQuery query = {};
@@ -491,7 +486,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             for(int i = 1; i <= kCurBounces; ++i){
                 tempIdx = gRadianceTargets.IncrementCounter();
                 tempIdx2 = gRadianceQuries.IncrementCounter();
-                tempRR = safe_div(tempRR - recordR[i - 1], recordT[i]);//这个不太对应该
+                tempRR = safe_div(tempRR - recordR[i - 1], recordT[i]);//这个不太对应该,对的吧
                 RadianceTarget target = {};
                 target.radiance = tempRR;
                 gRadianceTargets[tempIdx] = target;
@@ -517,12 +512,14 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             // }
             //outColor = gRadianceTargets[temp].radiance;
         }
-        
+        //if(kCurBounces >= 2) myTest = true;
+
         let curMi = gScene.materials.getMaterialInstance(initialSd, lod);
         gRenderQuries[idx] = generateQuery(initialSd, curMi.getProperties(initialSd));
         //outColor = gRenderTargets[idx].radiance;
         outColor = float3(0.f);
-
+        //if(myTest) outColor = float3(1.f);
+        //else outColor = float3(0.f, 1.f, 0.f);
         //int idxTrain = gRadianceQuries.IncrementCounter();
         //if(idxTrain > 1000 ) return float3(0., 1., 0.);
         //else if(0 == idxTrain) return float3(1., 1., 1.);
@@ -735,8 +732,8 @@ bool hasFourPercentChance(uint idx)
     //return chance < 0.2f;
     //return chance < 0.04f; // 4% 的机会为 true
     //上面的方法不太行，可能要伪随机了
-    //if(0 == (idx) % 5) return true;
+    if(0 == (idx + gFrameCount) % 20) return true;
     //if(0 == (idx + gFrameCount) % 5) return true;
-    //else return false;
-    return true;
+    else return false;
+    //return true;
 }

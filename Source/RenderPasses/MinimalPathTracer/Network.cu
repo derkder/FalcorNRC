@@ -47,7 +47,7 @@ uint32_t showMsg_counter(uint32_t* dataOnDevice)
 {
     uint32_t* dataOnHost = new uint32_t[1];
     cudaMemcpy(dataOnHost, dataOnDevice, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-    printf("%u\n", dataOnHost[0]);
+    printf("wow %u\n", dataOnHost[0]);
     uint32_t res = dataOnHost[0];
     delete[] dataOnHost;
     return res;
@@ -197,6 +197,7 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
     //std::cout << "Hello World!" << std::endl;
     //uint32_t n_elements = trainCounts[0].trainCounter;//targets能读到这里怎么会读不到呢
     //uint32_t n_elements = *trainCounts;
+    showMsg_counter(trainCounts);//很好，测出来总算对了吐血版
     uint32_t n_elements = frame_width * frame_height;
     mNetworkComponents->optimizer->set_learning_rate(learning_rate);
 
