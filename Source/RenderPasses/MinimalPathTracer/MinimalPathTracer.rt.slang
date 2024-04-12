@@ -46,6 +46,7 @@ static const float kRayTMax = FLT_MAX;
 
 static float3 recordR[MAX_BOUNCES + 2];//radiance before throughtout
 static float3 recordT[MAX_BOUNCES + 2];//throughout
+static RadianceQuery recordQ[MAX_BOUNCES + 2];
 static uint kCurBounces = 0;//当前像素弹射的最大次数
 static bool myTest = false;
 static ShadingData initialSd;
@@ -383,10 +384,10 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
     const HitInfo hit = HitInfo(gVBuffer[pixel]);
     uint32_t idx = pixel.x + pixel.y * frameDim.x;
-    if(idx == frameDim.x * frameDim.y - 2){
-        TrainCount[0] = gRadianceQuries.IncrementCounter();
-        if(TrainCount[0] > 2000) return float3(1.f); 
-    }
+    // if(idx == frameDim.x * frameDim.y - 2){
+    //     TrainCount[0] = gRadianceQuries.IncrementCounter();
+    //     if(TrainCount[0] > 2000) return float3(1.f); 
+    // }
 
     if (hit.isValid())
     {
@@ -445,12 +446,14 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             //target.radiance = rayData.radiance;
             int idxTrain = gRadianceQuries.IncrementCounter();
             RadianceQuery query = generateQuery(sd, mi.getProperties(sd));
-            gRadianceQuries[idxTrain] = query;
+            recordQ[0] = query;
+            //gRadianceQuries[idxTrain] = query;
             
             
             recordR[0] = outColor;
             recordT[0] = float3(1.f);
             kCurBounces += 1;
+            //TrainCount[0] = idxTrain;
         }
         initialSd = sd;
         //第一次bounce之后的循环？
@@ -467,25 +470,33 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 RadianceQuery query = {};
                 let curMi = gScene.materials.getMaterialInstance(lastSd, lod);
                 query = generateQuery(lastSd, curMi.getProperties(lastSd));
-                int idxTrain = gRadianceQuries.IncrementCounter();
-                gRadianceQuries[idxTrain] = query;
+                //int idxTrain = gRadianceQuries.IncrementCounter();
+                //gRadianceQuries[idxTrain] = query;
+                recordQ[kCurBounces] = query;
                 kCurBounces += 1;
+                //TrainCount[0] = idxTrain;
             }
         }
 
         if(isTrain){
             float3 tempRR = outColor + rayData.radiance;
             int tempIdx = gRadianceTargets.IncrementCounter();
+            int tempIdx2 = gRadianceQuries.IncrementCounter();
             RadianceTarget target = {};
             target.radiance = tempRR;
             gRadianceTargets[tempIdx] = target;
+            gRadianceQuries[tempIdx2] = recordQ[0];
             int adx = tempIdx;
+            TrainCount[0] = tempIdx;
             for(int i = 1; i <= kCurBounces; ++i){
                 tempIdx = gRadianceTargets.IncrementCounter();
+                tempIdx2 = gRadianceQuries.IncrementCounter();
                 tempRR = safe_div(tempRR - recordR[i - 1], recordT[i]);//这个不太对应该
                 RadianceTarget target = {};
                 target.radiance = tempRR;
                 gRadianceTargets[tempIdx] = target;
+                gRadianceQuries[tempIdx2] = recordQ[i];
+                TrainCount[0] = tempIdx;
             }
             //outColor = gRadianceTargets[adx].radiance;
 
