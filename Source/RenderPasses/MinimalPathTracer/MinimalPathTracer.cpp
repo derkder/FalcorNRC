@@ -405,6 +405,7 @@ void MinimalPathTracer::setScene(RenderContext* pRenderContext, const ref<Scene>
         DefineList defines;
         defines.add(mpSampleGenerator->getDefines());
         defines.add(mpScene->getSceneDefines());
+        
         mpResolvePass = ComputePass::create(mpDevice, resolveDesc, defines);
     }
 }

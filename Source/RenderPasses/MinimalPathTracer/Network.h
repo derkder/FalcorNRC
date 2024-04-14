@@ -25,6 +25,7 @@ private:
     uint32_t frame_height;
     uint32_t seed = 7272u;
     float learning_rate = 1e-4f;
-
-    
+    uint32_t batch_size = 1 << 14;
+    uint32_t n_train_batch = 4;
+    unsigned int max_training_query_size = 1 << 16;                   // ~57,600  
 };
