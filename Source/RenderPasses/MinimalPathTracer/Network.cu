@@ -1,12 +1,20 @@
 #include "Network.h"
+#include "tiny-cuda-nn/common_host.h"
 
+#include <cuda.h>
+#include <curand.h>
+
+#include <cstdint>
+#include <memory>
 #include <fstream>
 #include <iostream>
 #include <filesystem/path.h>
 
 #include <tiny-cuda-nn/common_device.h>
 #include <tiny-cuda-nn/config.h>
+#include <tiny-cuda-nn/common.h>
 #include <json/json.hpp>
+
 
 using namespace tcnn;
 using precision_t = network_precision_t;
@@ -29,10 +37,13 @@ struct IOData
 
     GPUMatrix<float>* training_input_mat = nullptr;
     GPUMatrix<float>* training_output_mat = nullptr;
+
+    GPUMemory<float>* random_seq = nullptr;
 };
 
 cudaStream_t inference_stream = nullptr;
 cudaStream_t training_stream = nullptr;
+curandGenerator_t rng;
 
 
 NetworkComponents* mNetworkComponents = nullptr;
@@ -77,8 +88,32 @@ __global__ void formatInputTarget(uint32_t n_elements, Falcor::RadianceQuery* qu
     input[i * input_stride + 13] = query.specular.z;
 
     output[i * output_stride + 0] = target.radiance.x, output[i * output_stride + 1] = target.radiance.y, output[i * output_stride + 2] = target.radiance.z;
+}
 
-   
+template<typename T, uint32_t input_stride, uint32_t output_stride>
+__global__ void formatInputTargetRandom(uint32_t n_elements, uint32_t offset,Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets,
+    T* input, T* output, uint32_t* trainCount, float* random_indices)
+{
+    uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i + offset > n_elements)
+        return;
+    int data_index = i * input_stride;
+    int sample_index = i + offset;
+    //sample_index = (1 - random_indices[sample_index]) * trainCount[0]; //在0 - trainCount[0]之中随机取了一个index
+
+    Falcor::RadianceQuery query = queries[sample_index];
+    Falcor::RadianceTarget target = targets[sample_index];
+
+    input[i * input_stride + 0] = query.pos.x, input[i * input_stride + 1] = query.pos.y, input[i * input_stride + 2] = query.pos.z;
+    input[i * input_stride + 3] = query.dir.x, input[i * input_stride + 4] = query.dir.y;
+
+    input[i * input_stride + 5] = query.roughness;
+    input[i * input_stride + 6] = query.normal.x, input[i * input_stride + 7] = query.normal.y;
+    input[i * input_stride + 8] = query.diffuse.x, input[i * input_stride + 9] = query.diffuse.y, input[i * input_stride + 10] = query.diffuse.z;
+    input[i * input_stride + 11] = query.specular.x, input[i * input_stride + 12] = query.specular.y,
+    input[i * input_stride + 13] = query.specular.z;
+
+    output[i * output_stride + 0] = target.radiance.x, output[i * output_stride + 1] = target.radiance.y, output[i * output_stride + 2] = target.radiance.z;
 }
 
 template<typename T, uint32_t input_stride>
@@ -125,6 +160,10 @@ NRCNetwork :: NRCNetwork(const uint32_t width, const uint32_t height)
 
     CUDA_CHECK_THROW(cudaStreamCreate(&inference_stream));
     CUDA_CHECK_THROW(cudaStreamCreate(&training_stream));
+
+    //curandCreateGenerator(&rng, CURAND_RNG_PSEUDO_DEFAULT);
+    //curandSetPseudoRandomGeneratorSeed(rng, 7272ULL);
+    //curandSetStream(rng, training_stream);
 
     mNetworkComponents = new NetworkComponents();
     mIOData = new IOData();
@@ -175,6 +214,8 @@ NRCNetwork :: NRCNetwork(const uint32_t width, const uint32_t height)
     mIOData->render_output_mat = new GPUMatrix<float>(NetConfig::n_output_dims, width * height);
     mIOData->training_input_mat = new GPUMatrix<float>(NetConfig::n_input_dims, width * height);
     mIOData->training_output_mat = new GPUMatrix<float>(NetConfig::n_output_dims, width * height);
+    mIOData->random_seq = new GPUMemory<float>(n_train_batch * batch_size);
+    //curandGenerateUniform(rng, mIOData->random_seq->data(), n_train_batch * batch_size);
 
     frame_width = width;
     frame_height = height;
@@ -201,19 +242,41 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
     uint32_t n_elements = frame_width * frame_height;
     mNetworkComponents->optimizer->set_learning_rate(learning_rate);
 
-    linear_kernel(formatInputTarget<float, NetConfig::n_input_dims, NetConfig::n_output_dims>, 0, training_stream, n_elements, queries, targets,
-        mIOData->training_input_mat->data(), mIOData->training_output_mat->data(), trainCounts
-    );
+    //linear_kernel(formatInputTarget<float, NetConfig::n_input_dims, NetConfig::n_output_dims>, 0, training_stream, n_elements, queries, targets,
+    //    mIOData->training_input_mat->data(), mIOData->training_output_mat->data(), trainCounts
+    //);
 
-    //std::cout << "input[i * stride + 0]" << mIOData->training_input_mat->data() << std::endl;
-    //std::cout << "output[i * stride + 0]" << mIOData->training_output_mat->data() << std::endl;
-    //uint32_t temp = showMsg_counter(trainCounts);//一直是0，xsl
+
+    //curandGenerateUniform(rng, mIOData->random_seq->data(), n_train_batch * batch_size);
+    for (uint32_t i = 0; i < n_train_batch; i++)
+    {
+        //
+        linear_kernel(
+            formatInputTargetRandom<float, NetConfig::n_input_dims, NetConfig::n_output_dims>,
+            0,
+            training_stream,
+            batch_size,
+            i * batch_size,
+            queries,
+            targets,
+            mIOData->training_input_mat->data(),
+            mIOData->training_output_mat->data(),
+            trainCounts,
+            mIOData->random_seq->data()
+        );
+        auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
+        float tmp_loss = 0;
+        tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
+        std::cout << tmp_loss << std::endl;
+    }
+
     //我真的不理解为什么w加了这个，应该是如果网络里放过了就不重复喂了？
     //mNetworkComponents->network->inference(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
-    auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
-    float tmp_loss = 0;
-    tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
-    std::cout << tmp_loss << std::endl;
+
+    //auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
+    //float tmp_loss = 0;
+    //tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
+    //std::cout << tmp_loss << std::endl;
     //json loaded_weights;
     //loaded_weights = mNetworkComponents->trainer->serialize(false);
     //std::cout << loaded_weights.dump(4) << std::endl;
@@ -230,6 +293,7 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
 
 void NRCNetwork ::forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t output)
 {
+    //这里应该可以累加吧
     //json loaded_weights;
     //loaded_weights = mNetworkComponents->trainer->serialize(false);
     //std::cout << loaded_weights.dump(4) << std::endl;

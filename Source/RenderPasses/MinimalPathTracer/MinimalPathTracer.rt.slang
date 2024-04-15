@@ -24,6 +24,7 @@ RWTexture2D<float4> gOutputColor;
 RWStructuredBuffer<RadianceQuery> gRadianceQuries;
 RWStructuredBuffer<RadianceTarget> gRadianceTargets;
 RWStructuredBuffer<RadianceQuery> gRenderQuries;
+RWStructuredBuffer<RadianceTarget> gRenderTempTarget;
 RWStructuredBuffer<uint> TrainCount;//cpp里再累加
 
 static ShadingData lastSd;
@@ -457,7 +458,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         }
 
         gRenderQuries[idx] = generateQuery(sd, mi.getProperties(sd));
-
+        //lastSd = sd;
         //第一次bounce之后的循环？
         // Follow path into the scene and compute its total contribution.
         for (uint depth = 0; depth <= kMaxBounces && !rayData.terminated; depth++)
@@ -504,23 +505,6 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 TrainCount[0] = tempIdx;
             }
             // outColor = gRadianceTargets[adx].radiance;
-
-
-
-            // int temp = gRadianceTargets.IncrementCounter();
-            // float3 tempRR = recordR[kCurBounces - 1];
-            // //gRadianceTargets[temp + kCurBounces - 1].radiance = recordR[kCurBounces];
-            // for(int i = kCurBounces - 2; i >= 0; --i){
-            //     //gRadianceQuries[idx + i] = recordQ[i];
-            //     RadianceTarget target = {};
-            //     //target.radiance = gRadianceTargets[temp + i + 1].radiance * recordT[i + 1] + recordR[i];
-            //     target.radiance = tempRR * recordT[i + 1] + recordR[i];
-            //     //target.radiance = recordR[0];
-            //     tempRR = target.radiance;
-            //     //gRadianceTargets[temp + i] = target;
-            //     if(0 == i) gRadianceTargets[temp + i] = target;
-            // }
-            //outColor = gRadianceTargets[temp].radiance;
         }
         //if(kCurBounces >= 2) myTest = true;
 
