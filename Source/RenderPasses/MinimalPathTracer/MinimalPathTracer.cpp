@@ -96,6 +96,16 @@ void MinimalPathTracer::prepareQueryBuffer(RenderContext* pRenderContext, const 
         );
         trainTargetCudaBuffer = createInteropBuffer(mpDevice, temp * sizeof(RadianceTarget) * mParams.frameDim.x * mParams.frameDim.y);
     }
+
+    if (!ptBuffer)
+    {
+        ptBuffer = mpDevice->createStructuredBuffer(
+            sizeof(RadianceTarget),
+            mParams.frameDim.x * mParams.frameDim.y,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess | ResourceBindFlags::Shared
+        );
+        ptCudaBuffer = createInteropBuffer(mpDevice, sizeof(RadianceQuery) * mParams.frameDim.x * mParams.frameDim.y);
+    }
     
 
     if (!renderQueryBuffer)
@@ -230,6 +240,7 @@ void MinimalPathTracer::execute(RenderContext* pRenderContext, const RenderData&
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
     var["gRadianceQuries"] = trainQueryBuffer;
     var["gRadianceTargets"] = trainTargetBuffer;
+    var["gPtResults"] = ptBuffer;
     var["gRenderQuries"] = renderQueryBuffer;
     var["TrainCount"] = pSharedCounterBuffer;
 
@@ -272,8 +283,10 @@ void MinimalPathTracer::execute(RenderContext* pRenderContext, const RenderData&
 
 void MinimalPathTracer::NRCForward(RenderContext* pRenderContext)
 {
+    pRenderContext->copyResource(ptCudaBuffer.buffer.get(), ptBuffer.get());
     pRenderContext->copyResource(renderQueryCudaBuffer.buffer.get(), renderQueryBuffer.get());
-    mNetwork->forward((RadianceQuery*)renderQueryCudaBuffer.devicePtr, mOutputSurf);
+
+    mNetwork->forward((RadianceQuery*)renderQueryCudaBuffer.devicePtr, (RadianceTarget*)ptCudaBuffer.devicePtr, mOutputSurf);
 }
 
 void MinimalPathTracer::NRCTrain(RenderContext* pRenderContext)

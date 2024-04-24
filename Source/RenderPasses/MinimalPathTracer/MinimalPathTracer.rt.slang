@@ -24,7 +24,7 @@ RWTexture2D<float4> gOutputColor;
 RWStructuredBuffer<RadianceQuery> gRadianceQuries;
 RWStructuredBuffer<RadianceTarget> gRadianceTargets;
 RWStructuredBuffer<RadianceQuery> gRenderQuries;
-RWStructuredBuffer<RadianceTarget> gRenderTempTarget;
+RWStructuredBuffer<RadianceTarget> gPtResults;//之前路径追踪的结果
 RWStructuredBuffer<uint> TrainCount;//cpp里再累加
 
 static ShadingData lastSd;
@@ -49,7 +49,6 @@ static float3 recordR[MAX_BOUNCES + 2];//radiance before throughtout
 static float3 recordT[MAX_BOUNCES + 2];//throughout
 static RadianceQuery recordQ[MAX_BOUNCES + 2];
 static bool myTest = false;
-static ShadingData initialSd;
 
 /**
  * Payload for shadow ray.
@@ -260,6 +259,7 @@ float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inou
 bool generateScatterRay(const ShadingData sd, const IMaterialInstance mi, bool isCurveHit, float3 rayOrigin, inout ScatterRayData rayData)
 {
     // Sample material.
+    lastSd = sd;
     BSDFSample bsdfSample;
     if (mi.sample(sd, rayData.sg, bsdfSample, kUseImportanceSampling))
     {
@@ -457,7 +457,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             //TrainCount[0] = idxTrain;
         }
 
-        gRenderQuries[idx] = generateQuery(sd, mi.getProperties(sd));
+        //上面的outcolor是0欸，说明上面的outcolor指的不是只弹一次对应的结果
         //lastSd = sd;
         //第一次bounce之后的循环？
         // Follow path into the scene and compute its total contribution.
@@ -482,7 +482,14 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 //kCurBounces += 1;
                 //TrainCount[0] = idxTrain;
             }
+
+            if(depth == 0){
+                gPtResults[idx].radiance = rayData.radiance;
+                gRenderQuries[idx] = generateQuery(lastSd, mi.getProperties(lastSd));
+            } 
         }
+
+        
 
         if(isTrain){
             float3 tempRR = outColor + rayData.radiance;

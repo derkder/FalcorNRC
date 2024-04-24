@@ -13,7 +13,7 @@ public:
 
     void Test();
     //void forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t output);
-    void forward(Falcor::RadianceQuery* queries, cudaSurfaceObject_t output);
+    void forward(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* ptResults, cudaSurfaceObject_t output);
     void train(
         Falcor::RadianceQuery* queries,
         Falcor::RadianceTarget* targets,

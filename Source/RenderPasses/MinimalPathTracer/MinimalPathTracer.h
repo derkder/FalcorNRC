@@ -118,13 +118,16 @@ private:
     ref<Buffer> trainTargetBuffer;
     InteropBuffer trainTargetCudaBuffer;
 
+    //pathTracer Result
+    ref<Buffer> ptBuffer;
+    InteropBuffer ptCudaBuffer;
+
     //render part可能这里用的surfaceObj会更好一点
     ref<Buffer> renderQueryBuffer;
     InteropBuffer renderQueryCudaBuffer;
     ref<Texture> mOutputTex;
     cudaSurfaceObject_t mOutputSurf;
 
-    
     ref<Buffer> pSharedCounterBuffer;
     InteropBuffer pSharedCounterCudaBuffer;
 };
