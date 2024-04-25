@@ -379,7 +379,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     const float3 primaryRayOrigin = gScene.camera.getPosition();
     const float3 primaryRayDir = getPrimaryRayDir(pixel, frameDim, gScene.camera);
 
-    const HitInfo hit = HitInfo(gVBuffer[pixel]);
+    const HitInfo hit = HitInfo(gVBuffer[pixel]);//这里装着hitinfo又是什么意思呢
     uint32_t idx = pixel.x + pixel.y * frameDim.x;
     // if(idx == frameDim.x * frameDim.y - 2){
     //     TrainCount[0] = gRadianceQuries.IncrementCounter();
@@ -444,7 +444,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         if(isTrain){  
             //target.radiance = rayData.radiance;
             int idxTrain = gRadianceQuries.IncrementCounter();
-            RadianceQuery query = generateQuery(sd, mi.getProperties(sd));
+            RadianceQuery query = generateQuery(sd);
             recordQ[0] = query;
             //gRadianceQuries[idxTrain] = query;
             
@@ -457,7 +457,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             //TrainCount[0] = idxTrain;
         }
 
-        //上面的outcolor是0欸，说明上面的outcolor指的不是只弹一次对应的结果
+        //上面的outcolor是0欸，说明上面的outcolor指的不是只弹一次对应的结果。也有可能是测试用的是全反射.
+        //只是那个场景没有，所以就是第一次bounce
         //lastSd = sd;
         //第一次bounce之后的循环？
         // Follow path into the scene and compute its total contribution.
@@ -474,8 +475,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 lastRadiance = rayData.radiance;
 
                 RadianceQuery query = {};
-                let curMi = gScene.materials.getMaterialInstance(lastSd, lod);
-                query = generateQuery(lastSd, curMi.getProperties(lastSd));
+                //let curMi = gScene.materials.getMaterialInstance(lastSd, lod);
+                query = generateQuery(lastSd);
                 //int idxTrain = gRadianceQuries.IncrementCounter();
                 //gRadianceQuries[idxTrain] = query;
                 recordQ[depth + 1] = query;
@@ -484,9 +485,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             }
 
             if(depth == 0){
-                gPtResults[idx].radiance = rayData.radiance;
-                gRenderQuries[idx] = generateQuery(lastSd, mi.getProperties(lastSd));
-            } 
+                gPtResults[idx].radiance = outColor + rayData.radiance;
+            }
+            if(depth == 1) gRenderQuries[idx] = generateQuery(lastSd);
         }
 
         
@@ -694,7 +695,7 @@ void rayGen()
     gOutputColor[pixel] = float4(color, 1.f);
 }
 
-RadianceQuery generateQuery(ShadingData sd, BSDFProperties p)
+RadianceQuery generateQuery(ShadingData sd)
 {
     RadianceQuery query = { };
     query.pos = sd.posW;
@@ -703,12 +704,14 @@ RadianceQuery generateQuery(ShadingData sd, BSDFProperties p)
     query.normal = world_to_latlong_map(faceN);    // reverse the normal if the primitive is seen on the back-face side.
     /*    query.diffuse = float4(sd.diffuse, 1);
         query.specular = float4(sd.specular, 1);*/
-    query.diffuse = p.diffuseReflectionAlbedo;
-    query.specular = p.specularReflectance;
-    query.roughness = p.roughness;
-    //query.diffuse = float3(0.f);
-    //query.specular = float3(0.f);
-    //query.roughness = 0.f;
+    let lod = ExplicitLodTextureSampler(0.f);
+    let mi = gScene.materials.getMaterialInstance(sd, lod);
+    query.diffuse = mi.getProperties(sd).diffuseReflectionAlbedo;
+    query.specular = mi.getProperties(sd).specularReflectionAlbedo;
+    query.roughness = mi.getProperties(sd).roughness;
+    // query.diffuse = p.diffuseReflectionAlbedo;
+    // query.specular = p.specularReflectanceAlbedo;
+    // query.roughness = p.roughness;
     return query;
 }
 

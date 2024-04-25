@@ -149,9 +149,9 @@ __global__ void mapToOutSurf(uint32_t n_elements, uint32_t width, Falcor::Radian
 
     float4 color = {0, 0, 0, 1};
 
-    color.x = output[i * stride + 0] + target.radiance.x;
-    color.y = output[i * stride + 1] + target.radiance.y;
-    color.z = output[i * stride + 2] + target.radiance.z;
+    color.x = output[i * stride + 0] * 0.1 + target.radiance.x;
+    color.y = output[i * stride + 1] * 0.1 + target.radiance.y;
+    color.z = output[i * stride + 2] * 0.1 + target.radiance.z;
     //color.x = target.radiance.x;
     //color.y = target.radiance.y;
     //color.z = target.radiance.z;
