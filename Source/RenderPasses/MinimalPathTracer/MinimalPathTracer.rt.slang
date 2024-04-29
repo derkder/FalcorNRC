@@ -63,12 +63,15 @@ struct ShadowRayData
  */
 struct ScatterRayData
 {
+    float3 dir;
+    bool wow;
     float3 radiance;  ///< Accumulated outgoing radiance from path.
     bool terminated;  ///< Set to true when path is terminated.
     float3 thp;       ///< Current path throughput. This is updated at each path vertex.
     uint pathLength;  ///< Path length in number of path segments (0 at origin, 1 at first secondary hit, etc.). Max 2^31.
     float3 origin;    ///< Next path segment origin.
     float3 direction; ///< Next path segment direction.
+
 
     SampleGenerator sg; ///< Per-ray state for the sample generator (up to 16B).
 
@@ -77,6 +80,8 @@ struct ScatterRayData
      */
     __init(SampleGenerator sg)
     {
+        this.dir = float3(0, 0, 0);
+        this.wow = false;
         this.terminated = false;
         this.pathLength = 0;
         this.radiance = float3(0, 0, 0);
