@@ -24,6 +24,7 @@ RWTexture2D<float4> gOutputColor;
 RWStructuredBuffer<RadianceQuery> gRadianceQuries;
 RWStructuredBuffer<RadianceTarget> gRadianceTargets;
 RWStructuredBuffer<RadianceQuery> gRenderQuries;
+RWStructuredBuffer<RadianceTarget> gRenderThps;
 RWStructuredBuffer<RadianceTarget> gPtResults;//之前路径追踪的结果
 RWStructuredBuffer<uint> TrainCount;//cpp里再累加
 
@@ -492,7 +493,12 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             if(depth == 0){
                 gPtResults[idx].radiance = outColor + rayData.radiance;
             }
-            if(depth == 1) gRenderQuries[idx] = generateQuery(lastSd);
+            else if(depth == 2){
+                gRenderThps[idx].radiance = rayData.thp;
+            }
+            else if(depth == 1){
+                gRenderQuries[idx] = generateQuery(lastSd);
+            } 
         }
 
         

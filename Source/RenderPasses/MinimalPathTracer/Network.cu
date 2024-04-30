@@ -136,22 +136,23 @@ __global__ void formatRenderInput(uint32_t n_elements, Falcor::RadianceQuery* qu
 }
 
 template<typename T, uint32_t stride>
-__global__ void mapToOutSurf(uint32_t n_elements, uint32_t width, Falcor::RadianceTarget* targets, T* output, cudaSurfaceObject_t outSurf)
+__global__ void mapToOutSurf(uint32_t n_elements, uint32_t width, Falcor::RadianceTarget* thps, Falcor::RadianceTarget* targets, T* output, cudaSurfaceObject_t outSurf)
 {
     uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_elements)
         return;
 
     Falcor::RadianceTarget target = targets[i];
+    Falcor::RadianceTarget thp = thps[i];
 
     uint32_t x = i % width;
     uint32_t y = i / width;
 
     float4 color = {0, 0, 0, 1};
 
-    color.x = output[i * stride + 0] * 0.1 + target.radiance.x;
-    color.y = output[i * stride + 1] * 0.1 + target.radiance.y;
-    color.z = output[i * stride + 2] * 0.1 + target.radiance.z;
+    color.x = output[i * stride + 0] * thp.radiance.x + target.radiance.x;
+    color.y = output[i * stride + 1] * thp.radiance.y + target.radiance.y;
+    color.z = output[i * stride + 2] * thp.radiance.z + target.radiance.z;
     //color.x = target.radiance.x;
     //color.y = target.radiance.y;
     //color.z = target.radiance.z;
@@ -301,7 +302,7 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
 
 
 
-void NRCNetwork ::forward(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* ptResults, cudaSurfaceObject_t output)
+void NRCNetwork ::forward(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* thps, Falcor::RadianceTarget* ptResults, cudaSurfaceObject_t output)
 {
     //这里应该可以累加吧
     //json loaded_weights;
@@ -314,7 +315,7 @@ void NRCNetwork ::forward(Falcor::RadianceQuery* queries, Falcor::RadianceTarget
     linear_kernel(formatRenderInput<float, NetConfig::n_input_dims>, 0, inference_stream, n_elements, queries, mIOData->render_input_mat->data());
     mNetworkComponents->network->inference(inference_stream, *mIOData->render_input_mat, *mIOData->render_output_mat);
     linear_kernel(
-        mapToOutSurf<float, NetConfig::n_output_dims>, 0, inference_stream, n_elements, frame_width, ptResults,
+        mapToOutSurf<float, NetConfig::n_output_dims>, 0, inference_stream, n_elements, frame_width, thps, ptResults,
         mIOData->render_output_mat->data(), output
     );
     CUDA_CHECK_THROW(cudaStreamSynchronize(inference_stream));

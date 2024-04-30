@@ -125,6 +125,9 @@ private:
     //render part可能这里用的surfaceObj会更好一点
     ref<Buffer> renderQueryBuffer;
     InteropBuffer renderQueryCudaBuffer;
+    ref<Buffer> renderThpBuffer;
+    InteropBuffer renderThpCudaBuffer;
+
     ref<Texture> mOutputTex;
     cudaSurfaceObject_t mOutputSurf;
 
