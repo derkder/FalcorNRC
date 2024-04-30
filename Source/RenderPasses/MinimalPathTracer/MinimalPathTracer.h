@@ -93,6 +93,8 @@ private:
     /// Use importance sampling for materials.
     bool mUseImportanceSampling = true;
 
+    uint size = 1 << 16;
+
     // Runtime data
 
     /// Frame count since scene was loaded.

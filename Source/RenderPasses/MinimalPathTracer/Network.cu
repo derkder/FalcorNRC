@@ -3,6 +3,9 @@
 
 #include <cuda.h>
 #include <curand.h>
+#include <random>
+#include <vector>
+#include <algorithm>
 
 #include <cstdint>
 #include <memory>
@@ -45,6 +48,9 @@ cudaStream_t inference_stream = nullptr;
 cudaStream_t training_stream = nullptr;
 cudaStream_t temp_stream = nullptr;
 curandGenerator_t rng;
+std::default_random_engine generator;
+std::uniform_real_distribution<float> distribution(0.0, 1.0);
+
 
 
 NetworkComponents* mNetworkComponents = nullptr;
@@ -64,6 +70,26 @@ uint32_t showMsg_counter(uint32_t* dataOnDevice)
     delete[] dataOnHost;
     return res;
 }
+
+__device__ float lcg_random(unsigned int& seed)
+{
+    const unsigned int a = 1664525;
+    const unsigned int c = 1013904223;
+    seed = a * seed + c;
+    return static_cast<float>(seed) / 4294967296.0f; // 返回 0.0 到 1.0 之间的值
+}
+
+template<typename T, uint32_t input_stride>
+__global__ void generate_random_numbers(uint32_t n_elements, float* random_seq, int n, unsigned int seed)
+{
+    int idx = threadIdx.x + blockDim.x * blockIdx.x;
+    if (idx < n)
+    {
+        unsigned int local_seed = seed + idx; // 为每个线程生成不同的种子
+        random_seq[idx] = lcg_random(local_seed);
+    }
+}
+
 
 
 template<typename T, uint32_t input_stride, uint32_t output_stride>
@@ -93,14 +119,16 @@ __global__ void formatInputTarget(uint32_t n_elements, Falcor::RadianceQuery* qu
 
 template<typename T, uint32_t input_stride, uint32_t output_stride>
 __global__ void formatInputTargetRandom(uint32_t n_elements, uint32_t offset,Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets,
-    T* input, T* output, uint32_t* trainCount, float* random_indices)
+    T* input, T* output, uint32_t* trainCount, unsigned int seed)
 {
     uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+
     if (i + offset > n_elements)
         return;
     int data_index = i * input_stride;
     int sample_index = i + offset;
-    //sample_index = (1 - random_indices[sample_index]) * trainCount[0]; //在0 - trainCount[0]之中随机取了一个index
+    unsigned int local_seed = i + seed;
+    sample_index = (1 - lcg_random(local_seed)) * trainCount[0]; // 在0 - trainCount[0]之中随机取了一个index
 
     Falcor::RadianceQuery query = queries[sample_index];
     Falcor::RadianceTarget target = targets[sample_index];
@@ -171,6 +199,7 @@ NRCNetwork :: NRCNetwork(const uint32_t width, const uint32_t height)
     //curandCreateGenerator(&rng, CURAND_RNG_PSEUDO_DEFAULT);
     //curandSetPseudoRandomGeneratorSeed(rng, 7272ULL);
     //curandSetStream(rng, training_stream);
+    random_seq_host.resize(max_training_query_size);
 
     mNetworkComponents = new NetworkComponents();
     mIOData = new IOData();
@@ -252,34 +281,57 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
     );
 
 
-    auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
-    float tmp_loss = 0;
-    tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
-    std::cout << tmp_loss << std::endl;
+    // auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
+    // float tmp_loss = 0;
+    // tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
+    // std::cout << tmp_loss << std::endl;
 
 
     //curandGenerateUniform(rng, mIOData->random_seq->data(), n_train_batch * batch_size);
-    //for (uint32_t i = 0; i < n_train_batch; i++)
+    // 生成随机数并填充向量
+    //for (int i = 0; i < max_training_query_size; ++i) 
     //{
-    //    
-    //    linear_kernel(
-    //        formatInputTargetRandom<float, NetConfig::n_input_dims, NetConfig::n_output_dims>,
-    //        0,
-    //        training_stream,
-    //        batch_size,
-    //        i * batch_size,
-    //        queries,
-    //        targets,
-    //        mIOData->training_input_mat->data(),
-    //        mIOData->training_output_mat->data(),
-    //        trainCounts,
-    //        mIOData->random_seq->data()
-    //    );
-    //    auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
-    //    float tmp_loss = 0;
-    //    tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
-    //    std::cout << tmp_loss << std::endl;
+    //    random_seq_host[i] = distribution(generator);
     //}
+    //float *d_random_seq;
+    //cudaMalloc(&d_random_seq, max_training_query_size * sizeof(float));
+    //cudaMemcpy(d_random_seq, random_seq_host.data(), max_training_query_size * sizeof(float), cudaMemcpyHostToDevice);
+    if (isRandom)
+    {
+        //float* d_random_seq;
+        //int n = max_training_query_size;
+        //cudaMalloc(&d_random_seq, n * sizeof(float));
+        //linear_kernel(generate_random_numbers<float, NetConfig::n_input_dims>, 0, training_stream, n_elements, d_random_seq, n, time(NULL));
+        unsigned int seed = time(NULL);
+        for (uint32_t i = 0; i < n_train_batch; i++)
+        {
+            linear_kernel(
+                formatInputTargetRandom<float, NetConfig::n_input_dims, NetConfig::n_output_dims>,
+                0,
+                training_stream,
+                batch_size, // 规定运行几次
+                i * batch_size,
+                queries,
+                targets,
+                mIOData->training_input_mat->data(),
+                mIOData->training_output_mat->data(),
+                trainCounts,
+                seed
+            );
+            auto ctx =
+                mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
+            float tmp_loss = 0;
+            tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
+            std::cout << tmp_loss << std::endl;
+        }
+    }
+    else
+    {
+         auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
+         float tmp_loss = 0;
+         tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
+         std::cout << tmp_loss << std::endl;
+    }
 
     //我真的不理解为什么w加了这个，应该是如果网络里放过了就不重复喂了？
     //mNetworkComponents->network->inference(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
