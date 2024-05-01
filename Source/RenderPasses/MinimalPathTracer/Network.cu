@@ -71,6 +71,7 @@ uint32_t showMsg_counter(uint32_t* dataOnDevice)
     return res;
 }
 
+//因为currand库的调用试了很久也不行
 __device__ float lcg_random(unsigned int& seed)
 {
     const unsigned int a = 1664525;
@@ -79,16 +80,16 @@ __device__ float lcg_random(unsigned int& seed)
     return static_cast<float>(seed) / 4294967296.0f; // 返回 0.0 到 1.0 之间的值
 }
 
-template<typename T, uint32_t input_stride>
-__global__ void generate_random_numbers(uint32_t n_elements, float* random_seq, int n, unsigned int seed)
-{
-    int idx = threadIdx.x + blockDim.x * blockIdx.x;
-    if (idx < n)
-    {
-        unsigned int local_seed = seed + idx; // 为每个线程生成不同的种子
-        random_seq[idx] = lcg_random(local_seed);
-    }
-}
+//template<typename T, uint32_t input_stride>
+//__global__ void generate_random_numbers(uint32_t n_elements, float* random_seq, int n, unsigned int seed)
+//{
+//    int idx = threadIdx.x + blockDim.x * blockIdx.x;
+//    if (idx < n)
+//    {
+//        unsigned int local_seed = seed + idx; // 为每个线程生成不同的种子
+//        random_seq[idx] = lcg_random(local_seed);
+//    }
+//}
 
 
 
@@ -122,8 +123,11 @@ __global__ void formatInputTargetRandom(uint32_t n_elements, uint32_t offset,Fal
     T* input, T* output, uint32_t* trainCount, unsigned int seed)
 {
     uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
+    //下面是m的判断，感觉不太对啊。。。
+    //if (i + offset > n_elements)
+    //    return;
 
-    if (i + offset > n_elements)
+    if (i > n_elements)
         return;
     int data_index = i * input_stride;
     int sample_index = i + offset;
@@ -288,21 +292,14 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
 
 
     //curandGenerateUniform(rng, mIOData->random_seq->data(), n_train_batch * batch_size);
-    // 生成随机数并填充向量
-    //for (int i = 0; i < max_training_query_size; ++i) 
-    //{
-    //    random_seq_host[i] = distribution(generator);
-    //}
-    //float *d_random_seq;
-    //cudaMalloc(&d_random_seq, max_training_query_size * sizeof(float));
-    //cudaMemcpy(d_random_seq, random_seq_host.data(), max_training_query_size * sizeof(float), cudaMemcpyHostToDevice);
+    //seed = (seed + 1) % (1 << 31);
     if (isRandom)
     {
         //float* d_random_seq;
         //int n = max_training_query_size;
         //cudaMalloc(&d_random_seq, n * sizeof(float));
         //linear_kernel(generate_random_numbers<float, NetConfig::n_input_dims>, 0, training_stream, n_elements, d_random_seq, n, time(NULL));
-        unsigned int seed = time(NULL);
+        
         for (uint32_t i = 0; i < n_train_batch; i++)
         {
             linear_kernel(

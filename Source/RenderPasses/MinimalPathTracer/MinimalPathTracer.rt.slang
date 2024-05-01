@@ -291,7 +291,7 @@ bool generateScatterRay(const ShadingData sd, const IMaterialInstance mi, bool i
  *
  */
 //这里因为是另一个shader调用的，奇奇怪怪的，逻辑少往里面放
-void handleHit(const HitInfo hit, inout ScatterRayData rayData, inout ShadingData hhSd)//处理当前的hit并计算下一次hit用到的东西.被shader调用
+void handleHit(const HitInfo hit, inout ScatterRayData rayData)//处理当前的hit并计算下一次hit用到的东西.被shader调用
 {
     //myTest = true;  
     //if(0 == rayData.pathLength) TrainCount[0] = 5;//第一此进入的时候rayData.pathLength = 0
@@ -303,7 +303,6 @@ void handleHit(const HitInfo hit, inout ScatterRayData rayData, inout ShadingDat
     ShadingData sd = loadShadingData(hit, rayData.origin, rayData.direction, lod);
     // Create material instance.
     let mi = gScene.materials.getMaterialInstance(sd, lod);
-    hhSd = sd;
 
     
     //recordT[rayData.pathLength + 1] = rayData.thp;
@@ -599,7 +598,7 @@ void scatterTriangleMeshClosestHit(inout ScatterRayData rayData, BuiltInTriangle
     triangleHit.instanceID = getGeometryInstanceID();
     triangleHit.primitiveIndex = PrimitiveIndex();
     triangleHit.barycentrics = attribs.barycentrics;
-    handleHit(HitInfo(triangleHit), rayData, lastSd);
+    handleHit(HitInfo(triangleHit), rayData);
 }
 
 [shader("anyhit")]
@@ -637,7 +636,7 @@ void scatterDisplacedTriangleMeshClosestHit(inout ScatterRayData rayData, Displa
     displacedTriangleHit.primitiveIndex = PrimitiveIndex();
     displacedTriangleHit.barycentrics = attribs.barycentrics;
     displacedTriangleHit.displacement = attribs.displacement;
-    handleHit(HitInfo(displacedTriangleHit), rayData, lastSd);
+    handleHit(HitInfo(displacedTriangleHit), rayData);
 }
 
 //
@@ -663,7 +662,7 @@ void scatterCurveClosestHit(inout ScatterRayData rayData, CurveIntersector::Attr
     curveHit.instanceID = getGeometryInstanceID();
     curveHit.primitiveIndex = PrimitiveIndex();
     curveHit.barycentrics = attribs.barycentrics;
-    handleHit(HitInfo(curveHit), rayData, lastSd);
+    handleHit(HitInfo(curveHit), rayData);
 }
 
 //
@@ -688,7 +687,7 @@ void scatterSdfGridClosestHit(inout ScatterRayData rayData, SDFGridHitData sdfGr
     SDFGridHit sdfGridHit;
     sdfGridHit.instanceID = getGeometryInstanceID();
     sdfGridHit.hitData = sdfGridHitData;
-    handleHit(HitInfo(sdfGridHit), rayData, lastSd);
+    handleHit(HitInfo(sdfGridHit), rayData);
 }
 
 //
