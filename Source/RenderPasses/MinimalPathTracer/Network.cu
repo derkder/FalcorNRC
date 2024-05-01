@@ -123,7 +123,7 @@ __global__ void formatInputTargetRandom(uint32_t n_elements, uint32_t offset,Fal
     T* input, T* output, uint32_t* trainCount, unsigned int seed)
 {
     uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    //下面是m的判断，感觉不太对啊。。。
+    //下面是m的判断，感觉不太对啊。。。,同时，这里不是因为改了才会那么慢的
     //if (i + offset > n_elements)
     //    return;
 
@@ -132,6 +132,7 @@ __global__ void formatInputTargetRandom(uint32_t n_elements, uint32_t offset,Fal
     int data_index = i * input_stride;
     int sample_index = i + offset;
     unsigned int local_seed = i + seed;
+    //这里试了不用我写的随机，还是很慢
     sample_index = (1 - lcg_random(local_seed)) * trainCount[0]; // 在0 - trainCount[0]之中随机取了一个index
 
     Falcor::RadianceQuery query = queries[sample_index];
@@ -203,7 +204,7 @@ NRCNetwork :: NRCNetwork(const uint32_t width, const uint32_t height)
     //curandCreateGenerator(&rng, CURAND_RNG_PSEUDO_DEFAULT);
     //curandSetPseudoRandomGeneratorSeed(rng, 7272ULL);
     //curandSetStream(rng, training_stream);
-    random_seq_host.resize(max_training_query_size);
+    //random_seq_host.resize(max_training_query_size);
 
     mNetworkComponents = new NetworkComponents();
     mIOData = new IOData();
@@ -302,6 +303,7 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
         
         for (uint32_t i = 0; i < n_train_batch; i++)
         {
+            seed = time(NULL);
             linear_kernel(
                 formatInputTargetRandom<float, NetConfig::n_input_dims, NetConfig::n_output_dims>,
                 0,

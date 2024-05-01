@@ -13,6 +13,9 @@ cbuffer CB
 {
     uint gFrameCount;    // Frame count since scene was loaded.
     uint gPRNGDimension; // First available PRNG dimension.
+    
+    float3 gSceneAABBCenter;             
+    float3 gSceneAABBExtent;
 }
 
 // Inputs
@@ -28,7 +31,6 @@ RWStructuredBuffer<RadianceTarget> gRenderThps;
 RWStructuredBuffer<RadianceTarget> gPtResults;//之前路径追踪的结果
 RWStructuredBuffer<uint> TrainCount;//cpp里再累加
 
-static ShadingData lastSd;
 static float3 lastThp = float3(1.f);
 static float3 lastRadiance = float3(0.f);
 static bool isTrain;//说明这个像素对应的路径的所有点都放到网络里
@@ -50,6 +52,7 @@ static float3 recordR[MAX_BOUNCES + 2];//radiance before throughtout
 static float3 recordT[MAX_BOUNCES + 2];//throughout
 static RadianceQuery recordQ[MAX_BOUNCES + 2];
 static bool myTest = false;
+static bool startNN = false; //什么时候开始调用网络的结果
 
 /**
  * Payload for shadow ray.
@@ -73,7 +76,7 @@ struct ScatterRayData
     float3 origin;    ///< Next path segment origin.
     float3 direction; ///< Next path segment direction.
 
-
+    RadianceQuery rq; //其实可以不用传一整个这么大的数组，传一部分就好了，因为有些变量和上面的变量的值是一样的
     SampleGenerator sg; ///< Per-ray state for the sample generator (up to 16B).
 
     /**
@@ -90,6 +93,7 @@ struct ScatterRayData
         this.origin = float3(0, 0, 0);
         this.direction = float3(0, 0, 0);
         this.sg = sg;
+        this.rq = {};
     }
 };
 
@@ -265,7 +269,6 @@ float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inou
 bool generateScatterRay(const ShadingData sd, const IMaterialInstance mi, bool isCurveHit, float3 rayOrigin, inout ScatterRayData rayData)
 {
     // Sample material.
-    lastSd = sd;
     BSDFSample bsdfSample;
     if (mi.sample(sd, rayData.sg, bsdfSample, kUseImportanceSampling))
     {
@@ -304,7 +307,7 @@ void handleHit(const HitInfo hit, inout ScatterRayData rayData)//处理当前的
     // Create material instance.
     let mi = gScene.materials.getMaterialInstance(sd, lod);
 
-    
+    rayData.rq = generateQuery(sd);
     //recordT[rayData.pathLength + 1] = rayData.thp;
 
     // Add emitted light.
@@ -480,8 +483,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 lastRadiance = rayData.radiance;
 
                 RadianceQuery query = {};
+                query = rayData.rq;
                 //let curMi = gScene.materials.getMaterialInstance(lastSd, lod);
-                query = generateQuery(lastSd);
+                //query = generateQuery(lastSd);
                 //int idxTrain = gRadianceQuries.IncrementCounter();
                 //gRadianceQuries[idxTrain] = query;
                 recordQ[depth + 1] = query;
@@ -491,12 +495,13 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
             if(depth == 0){
                 gPtResults[idx].radiance = outColor + rayData.radiance;
-            }
-            else if(depth == 2){
-                gRenderThps[idx].radiance = rayData.thp;
+                gRenderThps[idx].radiance = rayData.thp;//这个好像应该也放在depth = 0里
             }
             else if(depth == 1){
-                gRenderQuries[idx] = generateQuery(lastSd);
+                RadianceQuery query = {};
+                query = rayData.rq;
+                gRenderQuries[idx] = query;
+                
             } 
         }
 
@@ -705,10 +710,35 @@ void rayGen()
     gOutputColor[pixel] = float4(color, 1.f);
 }
 
+float3 normalizeCoord(float3 x)
+{
+    return (x - gSceneAABBCenter) * 2 / gSceneAABBExtent; 
+}
+
 RadianceQuery generateQuery(ShadingData sd)
 {
     RadianceQuery query = { };
     query.pos = sd.posW;
+    query.dir = world_to_latlong_map(sd.V);
+    float3 faceN = sd.frontFacing ? sd.faceN : -sd.faceN; 
+    query.normal = world_to_latlong_map(faceN);    // reverse the normal if the primitive is seen on the back-face side.
+    /*    query.diffuse = float4(sd.diffuse, 1);
+        query.specular = float4(sd.specular, 1);*/
+    let lod = ExplicitLodTextureSampler(0.f);
+    let mi = gScene.materials.getMaterialInstance(sd, lod);
+    query.diffuse = mi.getProperties(sd).diffuseReflectionAlbedo;
+    query.specular = mi.getProperties(sd).specularReflectionAlbedo;
+    query.roughness = mi.getProperties(sd).roughness;
+    // query.diffuse = p.diffuseReflectionAlbedo;
+    // query.specular = p.specularReflectanceAlbedo;
+    // query.roughness = p.roughness;
+    return query;
+}
+
+RadianceQuery generateQueryHard(ShadingData sd)
+{
+    RadianceQuery query = { };
+    query.pos = normalizeCoord(sd.posW);
     query.dir = world_to_latlong_map(sd.V);
     float3 faceN = sd.frontFacing ? sd.faceN : -sd.faceN; 
     query.normal = world_to_latlong_map(faceN);    // reverse the normal if the primitive is seen on the back-face side.
@@ -746,7 +776,11 @@ bool hasFourPercentChance(uint idx, uint frameDimx)
     //return chance < 0.04f; // 4% 的机会为 true
     //上面的方法不太行，可能要伪随机了
     //if(0 == (idx + gFrameCount) % 5) return true;
-    if(0 == (idx + gFrameCount + frameDimx) % 25) return true;
-    else return false;
+    // if(0 == (idx + gFrameCount + frameDimx) % 25) return true;
+    // else return false;
+    uint a = 1664525;
+    uint c = 1013904223;
+    uint seed = a * (idx + frameDimx) + c;
+    return (float(seed) / 4294967296.0f) < 0.04; // 返回 0.0 到 1.0 之间的值
     //return true;
 }

@@ -15,7 +15,7 @@ const char kResolveFile[] = "RenderPasses/MinimalPathTracer/ResolvePass.cs.slang
 // Ray tracing settings that affect the traversal stack size.
 // These should be set as small as possible.
 //const uint32_t kMaxPayloadSizeBytes = 72u;
-const uint32_t kMaxPayloadSizeBytes = 88u;
+//const uint32_t kMaxPayloadSizeBytes = 144u;
 const uint32_t kMaxRecursionDepth = 2u;
 
 const char kInputViewDir[] = "viewW";
@@ -249,6 +249,8 @@ void MinimalPathTracer::execute(RenderContext* pRenderContext, const RenderData&
     
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
+    var["CB"]["gSceneAABBCenter"] = mpScene->getSceneBounds().center();
+    var["CB"]["gSceneAABBExtent"] = mpScene->getSceneBounds().extent();
     var["gRadianceQuries"] = trainQueryBuffer;
     var["gRadianceTargets"] = trainTargetBuffer;
     var["gPtResults"] = ptBuffer;
@@ -372,7 +374,8 @@ void MinimalPathTracer::setScene(RenderContext* pRenderContext, const ref<Scene>
         ProgramDesc desc;
         desc.addShaderModules(mpScene->getShaderModules());
         desc.addShaderLibrary(kShaderFile);
-        desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
+        //desc.setMaxPayloadSize(kMaxPayloadSizeBytes);
+        desc.setMaxPayloadSize(160);
         desc.setMaxAttributeSize(mpScene->getRaytracingMaxAttributeSize());
         desc.setMaxTraceRecursionDepth(kMaxRecursionDepth);
 
