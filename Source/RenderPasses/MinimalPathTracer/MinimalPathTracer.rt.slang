@@ -50,9 +50,14 @@ static const float kRayTMax = FLT_MAX;
 
 static float3 recordR[MAX_BOUNCES + 2];//radiance before throughtout
 static float3 recordT[MAX_BOUNCES + 2];//throughout
+static float3 origins[MAX_BOUNCES + 2]; // record origins
+static float footprints[MAX_BOUNCES + 2]; //area spread approaximation
 static RadianceQuery recordQ[MAX_BOUNCES + 2];
 static bool myTest = false;
 static bool startNN = false; //什么时候开始调用网络的结果
+static bool smartEnd = true; //用area spread的公式
+static int suffix = 0;
+
 
 /**
  * Payload for shadow ray.
@@ -74,7 +79,9 @@ struct ScatterRayData
     float3 thp;       ///< Current path throughput. This is updated at each path vertex.
     uint pathLength;  ///< Path length in number of path segments (0 at origin, 1 at first secondary hit, etc.). Max 2^31.
     float3 origin;    ///< Next path segment origin.
+    float pdf;// 用来做spread area终止
     float3 direction; ///< Next path segment direction.
+    bool limited; // 当后面的结果可以开始用网络查询的时候,只需要知道thp和query(碰撞点信息)
 
     RadianceQuery rq; //其实可以不用传一整个这么大的数组，传一部分就好了，因为有些变量和上面的变量的值是一样的
     SampleGenerator sg; ///< Per-ray state for the sample generator (up to 16B).
@@ -91,7 +98,9 @@ struct ScatterRayData
         this.radiance = float3(0, 0, 0);
         this.thp = float3(1, 1, 1);
         this.origin = float3(0, 0, 0);
+        this.pdf = 0.f;
         this.direction = float3(0, 0, 0);
+        this.limited = false;
         this.sg = sg;
         this.rq = {};
     }
@@ -279,6 +288,7 @@ bool generateScatterRay(const ShadingData sd, const IMaterialInstance mi, bool i
         }
         rayData.direction = bsdfSample.wo;
         rayData.thp *= bsdfSample.weight;
+        rayData.pdf = bsdfSample.pdf;
         return any(rayData.thp > 0.f);
     }
 
@@ -310,6 +320,12 @@ void handleHit(const HitInfo hit, inout ScatterRayData rayData)//处理当前的
     rayData.rq = generateQuery(sd);
     //recordT[rayData.pathLength + 1] = rayData.thp;
 
+    if(rayData.limited){
+        //只需要知道thp与rq就可以了
+        rayData.pathLength++;
+        return ;
+    }
+
     // Add emitted light.
     if (kUseEmissiveLights && (kComputeDirect || rayData.pathLength > 0))
     {
@@ -324,7 +340,7 @@ void handleHit(const HitInfo hit, inout ScatterRayData rayData)//处理当前的
         return;
     }
 
-    // Compute ray origin for new rays spawned from the hit.
+    // Compute ray origin for !new rays! spawned from the hit.
     float3 rayOrigin;
     if (isCurveHit)
     {
@@ -333,6 +349,7 @@ void handleHit(const HitInfo hit, inout ScatterRayData rayData)//处理当前的
     }
     else
     {
+        //Computes new ray origin based on the hit point to avoid self-intersection.
         rayOrigin = sd.computeRayOrigin();
     }
 
@@ -385,6 +402,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     float3 outColor = float3(0.f);
 
     const float3 primaryRayOrigin = gScene.camera.getPosition();
+    origins[0] = primaryRayOrigin;
     const float3 primaryRayDir = getPrimaryRayDir(pixel, frameDim, gScene.camera);
 
     const HitInfo hit = HitInfo(gVBuffer[pixel]);//这里装着hitinfo又是什么意思呢
@@ -396,11 +414,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
     if (hit.isValid())
     {
-        //kCurBounces = 0;
-        //train加suffix抽4percent做训练query，render改下光线终止条件（本来按bounce次数终止的）
         // Pixel represents a valid primary hit. Compute its contribution.
  
-        isTrain = hasFourPercentChance(idx, pixel.y);//当前路径中了4%的概率，要加suffix拿出来做训练
+        isTrain = hasFourPercentChance(idx, pixel.y, );//当前路径中了4%的概率，要加suffix拿出来做训练
         //if(isTrain) return float3(1.f);
         //else float3(0.f);
         const bool isCurveHit = hit.getType() == HitType::Curve;
@@ -411,7 +427,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         
         // Create material instance at shading point.
         let mi = gScene.materials.getMaterialInstance(sd, lod);
-        
+
         // Create sample generator.
         SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
 
@@ -450,25 +466,26 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             rayData.terminated = true;
 
         if(isTrain){  
-            //target.radiance = rayData.radiance;
             int idxTrain = gRadianceQuries.IncrementCounter();
             RadianceQuery query = generateQuery(sd);
             recordQ[0] = query;
-            //gRadianceQuries[idxTrain] = query;
-            
-            
             recordR[0] = outColor;
             recordT[0] = float3(1.f);
             lastThp = float3(1.f);
             lastRadiance = float3(0.f);
-           //kCurBounces += 1;
-            //TrainCount[0] = idxTrain;
         }
-
-        //上面的outcolor是0欸，说明上面的outcolor指的不是只弹一次对应的结果。也有可能是测试用的是全反射.
-        //只是那个场景没有，所以就是第一次bounce
-        //lastSd = sd;
-        //第一次bounce之后的循环？
+        else{
+            if(smartEnd){
+                float3 faceN = sd.frontFacing ? sd.faceN : -sd.faceN; //normal        
+                float numerator = distance(rayData.origin, origins[0]) * distance(rayData.origin, origins[0]);
+                float denominator = 4 * M_PI * dot(normalize(faceN), normalize(rayData.origin - origins[0]));
+                footprints[0] = numerator / denominator;
+                origins[1] = rayData.origin;
+            }
+        }
+        
+        
+        //第一次bounce之后的循环
         // Follow path into the scene and compute its total contribution.
         for (uint depth = 0; depth <= kMaxBounces && !rayData.terminated; depth++)
         {
@@ -476,6 +493,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             // direct illumination and generates the next scatter ray.
             traceScatterRay(rayData);
             
+            //prepare training data
             if(isTrain){
                 recordT[depth + 1] = safe_div(rayData.thp, lastThp);
                 recordR[depth + 1] = safe_div(rayData.radiance - lastRadiance, rayData.thp);
@@ -484,30 +502,64 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
                 RadianceQuery query = {};
                 query = rayData.rq;
-                //let curMi = gScene.materials.getMaterialInstance(lastSd, lod);
-                //query = generateQuery(lastSd);
-                //int idxTrain = gRadianceQuries.IncrementCounter();
-                //gRadianceQuries[idxTrain] = query;
                 recordQ[depth + 1] = query;
-                //kCurBounces += 1;
-                //TrainCount[0] = idxTrain;
-            }
 
-            if(depth == 0){
-                gPtResults[idx].radiance = outColor + rayData.radiance;
-                gRenderThps[idx].radiance = rayData.thp;//这个好像应该也放在depth = 0里
             }
-            else if(depth == 1){
-                RadianceQuery query = {};
-                query = rayData.rq;
-                gRenderQuries[idx] = query;
-                
+            else{
+                if(smartEnd){
+                    //footprint足够大可以提前终止
+                    if(rayData.limited || (depth == kMaxBounces)){
+                        break;
+                    }
+
+                    //计算footprint
+                    float3 faceN = latlong_map_to_world(rayData.rq.normal); //normal        
+                    float numerator = distance(rayData.origin, origins[depth]) * distance(rayData.origin, origins[depth]);
+                    float denominator = 4 * M_PI * dot(normalize(faceN), normalize(rayData.origin - origins[depth]));
+
+                    //因为这里是和的平方不是平方和
+                    float lastSqrt = sqrt(footprints[depth]);// 前几次的结果平方之前
+                    float curFootprint = sqrt(numerator / rayData.pdf / denominator);
+                    footprints[depth + 1] = (lastSqrt + curFootprint) * (lastSqrt + curFootprint);
+                    origins[depth + 1] = rayData.origin;
+                    if(footprints[depth + 1] > footprints[0]){
+                        // 开启inference
+                        gPtResults[idx].radiance = outColor + rayData.radiance;
+                        rayData.limited = true;
+                        startNN = true;
+                    }
+                }
             } 
+
+            if(smartEnd){
+                if(rayData.limited){
+                    RadianceQuery query = {};
+                    query = rayData.rq;
+                    gRenderQuries[idx] = query;
+                    gRenderThps[idx].radiance = rayData.thp;
+                }
+                else{
+                    gPtResults[idx].radiance = outColor + rayData.radiance;
+                }
+            }
+            else{
+                if(depth == 0){
+                    gPtResults[idx].radiance = outColor + rayData.radiance;
+                }
+                else if(depth == 1){
+                    gRenderThps[idx].radiance = rayData.thp;
+                    RadianceQuery query = {};
+                    query = rayData.rq;
+                    gRenderQuries[idx] = query;
+                }
+                else break;
+            }
         }
 
         
-
+        
         if(isTrain){
+            ////prepare tranning data
             float3 tempRR = outColor + rayData.radiance;
             int tempIdx = gRadianceTargets.IncrementCounter();
             int tempIdx2 = gRadianceQuries.IncrementCounter();
@@ -527,7 +579,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 gRadianceQuries[tempIdx2] = recordQ[i];
                 TrainCount[0] = tempIdx;
             }
-            // outColor = gRadianceTargets[adx].radiance;
+            //gPtResults[idx].radiance = outColor + rayData.radiance;
+            //gRenderQuries[idx] = generateEmptyQuery();
+            //gRenderThps[idx].radiance = float3(0.);
         }
         //if(kCurBounces >= 2) myTest = true;
 
@@ -735,52 +789,34 @@ RadianceQuery generateQuery(ShadingData sd)
     return query;
 }
 
-RadianceQuery generateQueryHard(ShadingData sd)
-{
-    RadianceQuery query = { };
-    query.pos = normalizeCoord(sd.posW);
-    query.dir = world_to_latlong_map(sd.V);
-    float3 faceN = sd.frontFacing ? sd.faceN : -sd.faceN; 
-    query.normal = world_to_latlong_map(faceN);    // reverse the normal if the primitive is seen on the back-face side.
-    /*    query.diffuse = float4(sd.diffuse, 1);
-        query.specular = float4(sd.specular, 1);*/
-    let lod = ExplicitLodTextureSampler(0.f);
-    let mi = gScene.materials.getMaterialInstance(sd, lod);
-    query.diffuse = mi.getProperties(sd).diffuseReflectionAlbedo;
-    query.specular = mi.getProperties(sd).specularReflectionAlbedo;
-    query.roughness = mi.getProperties(sd).roughness;
-    // query.diffuse = p.diffuseReflectionAlbedo;
-    // query.specular = p.specularReflectanceAlbedo;
-    // query.roughness = p.roughness;
-    return query;
-}
 
 RadianceQuery generateEmptyQuery()
 {
     RadianceQuery query = { };
     query.pos = float3(0.f);
     query.dir = float2(0.f);
-    query.normal = float2(0.f);    // reverse the normal if the primitive is seen on the back-face side.
+    query.normal = float2(0.f);
     query.diffuse = float3(0.f);
     query.specular = float3(0.f);
     query.roughness = 0.f;
     return query;
 }
 
-bool hasFourPercentChance(uint idx, uint frameDimx)
-{
-    //Slang::RandomGenerator* randomGen = Slang::RandomGenerator::create(12345);
-    //const float chance = randomGen.nextUnitFloat32();
-    //为了方便我验证，先搞个大点的数
-    //return chance < 0.2f;
-    //return chance < 0.04f; // 4% 的机会为 true
-    //上面的方法不太行，可能要伪随机了
-    //if(0 == (idx + gFrameCount) % 5) return true;
-    // if(0 == (idx + gFrameCount + frameDimx) % 25) return true;
-    // else return false;
+
+bool hasFourPercentChance(uint idx, uint frameDimx) {
+    // 定义常量
     uint a = 1664525;
     uint c = 1013904223;
-    uint seed = a * (idx + frameDimx) + c;
-    return (float(seed) / 4294967296.0f) < 0.04; // 返回 0.0 到 1.0 之间的值
-    //return true;
+    uint m = 1 << 16; // 使用 2^32 作为模数
+
+    // 计算种子
+    // 注意：由于我们仅限于使用 uint，需确保计算过程中避免溢出
+    uint seed = (a * (idx + frameDimx + gFrameCount) % m + c) % m;
+
+    // 生成一个 [0, m-1] 范围内的随机数，并将其标准化为 [0.0, 1.0]
+    float randomValue = float(seed) / m;
+
+    // 比较生成的值是否小于 0.04
+    return randomValue < 0.04;
 }
+
