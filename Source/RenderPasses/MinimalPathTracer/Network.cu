@@ -97,7 +97,7 @@ template<typename T, uint32_t input_stride, uint32_t output_stride>
 __global__ void formatInputTarget(uint32_t n_elements, Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets,
     T* input, T* output, uint32_t* trainCount)
 {
-    n_elements = trainCount[0]; // woc居然只有这样可以读到，根本不能在外面读到一点儿
+    n_elements = trainCount[0];
     uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     if (i >= n_elements)
         return;
@@ -125,14 +125,16 @@ __global__ void formatInputTargetRandom(uint32_t n_elements, uint32_t offset,Fal
     uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
     //下面是m的判断，感觉不太对啊。。。,同时，这里不是因为改了才会那么慢的
     //if (i + offset > n_elements)
-    //    return;
-
-    if (i > n_elements)
+    //   return;
+    // 一共跑batch_size个线程，每个线程随机取一个sample训练
+    if (i >= n_elements)
         return;
     int data_index = i * input_stride;
     int sample_index = i + offset;
     unsigned int local_seed = i + seed;
+
     //这里试了不用我写的随机，还是很慢
+    //sample_index = i + offset;
     sample_index = (1 - lcg_random(local_seed)) * trainCount[0]; // 在0 - trainCount[0]之中随机取了一个index
 
     Falcor::RadianceQuery query = queries[sample_index];
@@ -251,6 +253,7 @@ NRCNetwork :: NRCNetwork(const uint32_t width, const uint32_t height)
     //json loaded_weights = json::parse(wf, nullptr, true, true);
     mIOData->render_input_mat = new GPUMatrix<float>(NetConfig::n_input_dims, width * height);
     mIOData->render_output_mat = new GPUMatrix<float>(NetConfig::n_output_dims, width * height);
+
     mIOData->training_input_mat = new GPUMatrix<float>(NetConfig::n_input_dims, width * height);
     mIOData->training_output_mat = new GPUMatrix<float>(NetConfig::n_output_dims, width * height);
     mIOData->random_seq = new GPUMemory<float>(n_train_batch * batch_size);
@@ -294,22 +297,21 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
 
     //curandGenerateUniform(rng, mIOData->random_seq->data(), n_train_batch * batch_size);
     //seed = (seed + 1) % (1 << 31);
-    if (isRandom)
+    if (isShuffle)
     {
         //float* d_random_seq;
         //int n = max_training_query_size;
         //cudaMalloc(&d_random_seq, n * sizeof(float));
         //linear_kernel(generate_random_numbers<float, NetConfig::n_input_dims>, 0, training_stream, n_elements, d_random_seq, n, time(NULL));
-        
         for (uint32_t i = 0; i < n_train_batch; i++)
         {
             seed = time(NULL);
             linear_kernel(
                 formatInputTargetRandom<float, NetConfig::n_input_dims, NetConfig::n_output_dims>,
-                0,
+                0, //共享内存的大小
                 training_stream,
-                batch_size, // 规定运行几次
-                i * batch_size,
+                batch_size, // 规定跑几个线程
+                i * batch_size, //offset
                 queries,
                 targets,
                 mIOData->training_input_mat->data(),
@@ -326,10 +328,28 @@ void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* 
     }
     else
     {
-         auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
+         /*auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
          float tmp_loss = 0;
          tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
-         std::cout << tmp_loss << std::endl;
+         std::cout << tmp_loss << std::endl;*/
+        seed = time(NULL);
+        linear_kernel(
+            formatInputTargetRandom<float, NetConfig::n_input_dims, NetConfig::n_output_dims>,
+            0, // 共享内存的大小
+            training_stream,
+            max_training_query_size, // 规定跑几个线程
+            0, // offset
+            queries,
+            targets,
+            mIOData->training_input_mat->data(),
+            mIOData->training_output_mat->data(),
+            trainCounts,
+            seed
+        );
+        auto ctx = mNetworkComponents->trainer->training_step(training_stream, *mIOData->training_input_mat, *mIOData->training_output_mat);
+        float tmp_loss = 0;
+        tmp_loss = mNetworkComponents->trainer->loss(training_stream, *ctx);
+        std::cout << tmp_loss << std::endl;
     }
 
     //我真的不理解为什么w加了这个，应该是如果网络里放过了就不重复喂了？

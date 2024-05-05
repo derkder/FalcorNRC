@@ -7,6 +7,7 @@ import Scene.Intersection;
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
+import Utils.Debug.PixelDebug;
 import Rendering.Lights.LightHelpers;
 
 cbuffer CB
@@ -50,13 +51,18 @@ static const float kRayTMax = FLT_MAX;
 
 static float3 recordR[MAX_BOUNCES + 2];//radiance before throughtout
 static float3 recordT[MAX_BOUNCES + 2];//throughout
+static RadianceQuery recordQ[MAX_BOUNCES + 2];
+static bool startNN = false; //什么时候开始调用网络的结果
+
+// area spread 终止
+static bool useAreaSpread = true; //用area spread的公式
+//static float c = 0.01;
+static float c = 10 * M_PI;
+static int suffix = 0;
 static float3 origins[MAX_BOUNCES + 2]; // record origins
 static float footprints[MAX_BOUNCES + 2]; //area spread approaximation
-static RadianceQuery recordQ[MAX_BOUNCES + 2];
-static bool myTest = false;
-static bool startNN = false; //什么时候开始调用网络的结果
-static bool smartEnd = true; //用area spread的公式
-static int suffix = 0;
+
+static bool myTest = false;// 测试用参数
 
 
 /**
@@ -475,12 +481,13 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             lastRadiance = float3(0.f);
         }
         else{
-            if(smartEnd){
+            if(useAreaSpread){
                 float3 faceN = sd.frontFacing ? sd.faceN : -sd.faceN; //normal        
                 float numerator = distance(rayData.origin, origins[0]) * distance(rayData.origin, origins[0]);
-                float denominator = 4 * M_PI * dot(normalize(faceN), normalize(rayData.origin - origins[0]));
+                float denominator = abs(4 * M_PI * dot(normalize(faceN), normalize(rayData.origin - origins[0])));
                 footprints[0] = numerator / denominator;
                 origins[1] = rayData.origin;
+                print("Footprint value:", footprints[0]);
             }
         }
         
@@ -506,24 +513,26 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
             }
             else{
-                if(smartEnd){
+                if(useAreaSpread){
                     //footprint足够大可以提前终止
-                    if(rayData.limited || (depth == kMaxBounces)){
+                    if(rayData.limited){
                         break;
                     }
-
                     //计算footprint
-                    float3 faceN = latlong_map_to_world(rayData.rq.normal); //normal        
+                    float3 faceN = latlong_map_to_world(rayData.rq.normal); //normal    
                     float numerator = distance(rayData.origin, origins[depth]) * distance(rayData.origin, origins[depth]);
-                    float denominator = 4 * M_PI * dot(normalize(faceN), normalize(rayData.origin - origins[depth]));
+                    float denominator = abs(rayData.pdf * dot(normalize(faceN), normalize(rayData.origin - origins[depth])));
 
                     //因为这里是和的平方不是平方和
-                    float lastSqrt = sqrt(footprints[depth]);// 前几次的结果平方之前
-                    float curFootprint = sqrt(numerator / rayData.pdf / denominator);
+                    float lastSqrt = 0 == depth ? 0 : sqrt(footprints[depth]);// 前几次的结果平方之前
+                    float curFootprint = sqrt(numerator / denominator);
                     footprints[depth + 1] = (lastSqrt + curFootprint) * (lastSqrt + curFootprint);
+                    print("Footprint value:", footprints[depth + 1]);
                     origins[depth + 1] = rayData.origin;
-                    if(footprints[depth + 1] > footprints[0]){
+                    if(footprints[depth + 1] > c * footprints[0]){
                         // 开启inference
+                        // 测试areaspread算法是什么时候终止的
+                        // return float3(1.0 / (depth + 1));
                         gPtResults[idx].radiance = outColor + rayData.radiance;
                         rayData.limited = true;
                         startNN = true;
@@ -531,7 +540,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 }
             } 
 
-            if(smartEnd){
+            if(useAreaSpread){
                 if(rayData.limited){
                     RadianceQuery query = {};
                     query = rayData.rq;
@@ -544,9 +553,13 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             }
             else{
                 if(depth == 0){
+                    //前两次开始使用查询的结果
                     gPtResults[idx].radiance = outColor + rayData.radiance;
+                    // 下次只计算碰撞点，后续的radiance贡献又网络决定
+                    rayData.limited = true;
                 }
                 else if(depth == 1){
+                    //从第三次开始使用查询的结果
                     gRenderThps[idx].radiance = rayData.thp;
                     RadianceQuery query = {};
                     query = rayData.rq;
@@ -557,9 +570,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         }
 
         
-        
-        if(isTrain){
-            ////prepare tranning data
+        //prepare tranning data
+        if(isTrain){  
             float3 tempRR = outColor + rayData.radiance;
             int tempIdx = gRadianceTargets.IncrementCounter();
             int tempIdx2 = gRadianceQuries.IncrementCounter();
@@ -774,6 +786,7 @@ RadianceQuery generateQuery(ShadingData sd)
     RadianceQuery query = { };
     query.pos = sd.posW;
     query.dir = world_to_latlong_map(sd.V);
+    //float3 faceN = sd.faceN; 
     float3 faceN = sd.frontFacing ? sd.faceN : -sd.faceN; 
     query.normal = world_to_latlong_map(faceN);    // reverse the normal if the primitive is seen on the back-face side.
     /*    query.diffuse = float4(sd.diffuse, 1);
