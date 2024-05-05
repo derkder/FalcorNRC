@@ -817,19 +817,12 @@ RadianceQuery generateEmptyQuery()
 
 
 bool hasFourPercentChance(uint idx, uint frameDimx) {
-    // 定义常量
     uint a = 1664525;
     uint c = 1013904223;
-    uint m = 1 << 16; // 使用 2^32 作为模数
+    uint m = 1 << 16;
 
-    // 计算种子
-    // 注意：由于我们仅限于使用 uint，需确保计算过程中避免溢出
     uint seed = (a * (idx + frameDimx + gFrameCount) % m + c) % m;
-
-    // 生成一个 [0, m-1] 范围内的随机数，并将其标准化为 [0.0, 1.0]
     float randomValue = float(seed) / m;
-
-    // 比较生成的值是否小于 0.04
     return randomValue < 0.04;
 }
 

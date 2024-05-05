@@ -78,7 +78,7 @@ void MinimalPathTracer::prepareQueryBuffer(RenderContext* pRenderContext, const 
     const auto& pInputViewDir = renderData.getTexture(kInputViewDir);
     mParams.frameDim = Falcor::uint2(pInputViewDir->getWidth(), pInputViewDir->getHeight());
     const int temp = 3;
-    //这里这个buffer的大小有点问题(应该大一点防止溢出？)
+    //这里这个buffer的大小有点问题(这里尽可能取大防止溢出)
     if (!trainQueryBuffer)
     {
         trainQueryBuffer = mpDevice->createStructuredBuffer(
@@ -284,10 +284,6 @@ void MinimalPathTracer::execute(RenderContext* pRenderContext, const RenderData&
     // Spawn the rays.
     mpScene->raytrace(pRenderContext, mTracer.pProgram.get(), mTracer.pVars, Falcor::uint3(targetDim, 1));
     //mNetwork->Test();
-    //  从 UAV 计数器复制一个 32 位整数到共享缓冲区。
-    //pRenderContext->resourceBarrier(trainQueryBuffer.get(), Falcor::Resource::State::CopySource);
-    //pRenderContext->copyBufferRegion(pSharedCounterBuffer.get(), 0, trainQueryBuffer->getUAVCounter().get(), 0, sizeof(uint32_t));
-    //trainingSampleCounter = reinterpret_cast<uint32_t*>(pSharedCounterBuffer->getCudaMemory()->getMappedData());
     NRCTrain(pRenderContext);
     NRCForward(pRenderContext);
     mFrameCount++;

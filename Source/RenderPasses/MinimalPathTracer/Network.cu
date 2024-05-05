@@ -123,9 +123,7 @@ __global__ void formatInputTargetRandom(uint32_t n_elements, uint32_t offset,Fal
     T* input, T* output, uint32_t* trainCount, unsigned int seed)
 {
     uint32_t i = blockIdx.x * blockDim.x + threadIdx.x;
-    //下面是m的判断，感觉不太对啊。。。,同时，这里不是因为改了才会那么慢的
-    //if (i + offset > n_elements)
-    //   return;
+
     // 一共跑batch_size个线程，每个线程随机取一个sample训练
     if (i >= n_elements)
         return;
@@ -278,9 +276,9 @@ void NRCNetwork::Test()
 void NRCNetwork ::train(Falcor::RadianceQuery* queries, Falcor::RadianceTarget* targets, float& loss, uint32_t* trainCounts)
 {
     //std::cout << "Hello World!" << std::endl;
-    //uint32_t n_elements = trainCounts[0].trainCounter;//targets能读到这里怎么会读不到呢
+    //uint32_t n_elements = trainCounts[0].trainCounter;//这样读读不到，只能放gpu里读
     //uint32_t n_elements = *trainCounts;
-    showMsg_counter(trainCounts);//很好，测出来总算对了吐血版
+    showMsg_counter(trainCounts);
     uint32_t n_elements = frame_width * frame_height;
     mNetworkComponents->optimizer->set_learning_rate(learning_rate);
 

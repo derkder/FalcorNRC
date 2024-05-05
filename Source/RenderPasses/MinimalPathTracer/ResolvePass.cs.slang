@@ -12,7 +12,6 @@ Texture2D<float4> radiance;
 Texture2D<PackedHitInfo> gVBuffer;
 RWTexture2D<float4> output;
 
-//为了保证先跑完网络再读数据其实更应该再搞一个pass
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadID: SV_DispatchThreadID)
 {
